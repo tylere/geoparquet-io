@@ -689,7 +689,7 @@ class TestCRSPreservation:
             con.close()
 
     def test_default_crs_handled(self, shapefile_output):
-        """Files with default CRS (EPSG:4326) should still export successfully."""
+        """Files with default CRS (EPSG:4326) should export with .prj file."""
         # Use a file with default CRS
         default_crs_file = TEST_DATA_DIR / "places_test.parquet"
 
@@ -699,8 +699,18 @@ class TestCRSPreservation:
             verbose=True,
         )
 
-        # Should succeed - .prj may or may not be created (GDAL's default is 4326)
         assert Path(shapefile_output).exists()
+
+        # .prj file MUST be created for EPSG:4326 (fixes #190)
+        # GDAL formats don't have implicit CRS defaults - must be explicit
+        prj_file = Path(shapefile_output).with_suffix(".prj")
+        assert prj_file.exists(), "Shapefile must have .prj file even for EPSG:4326"
+
+        # Verify it contains WGS84/4326 reference
+        prj_content = prj_file.read_text()
+        assert "WGS" in prj_content.upper() or "4326" in prj_content, (
+            ".prj should reference WGS84 or EPSG:4326"
+        )
 
     def test_missing_crs_handled_gracefully(self, geopackage_output):
         """Files without CRS should export without error."""
