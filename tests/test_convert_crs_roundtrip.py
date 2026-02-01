@@ -225,6 +225,48 @@ class TestProjectedCRSExport:
         epsg_code = crs.get("id", {}).get("code")
         assert epsg_code == 5070, f"Expected EPSG:5070, got {epsg_code}"
 
+    def test_projected_crs_flatgeobuf_roundtrip(self, fields_5070_file, tmp_path):
+        """Projected CRS should be preserved in FlatGeobuf round-trip."""
+        fgb_file = tmp_path / "projected.fgb"
+        output_parquet = tmp_path / "roundtrip.parquet"
+
+        # Export to FlatGeobuf
+        write_format(fields_5070_file, str(fgb_file), "flatgeobuf")
+
+        # Import back
+        convert_to_geoparquet(str(fgb_file), str(output_parquet))
+
+        # Verify CRS preserved
+        pf = pq.ParquetFile(output_parquet)
+        geo_meta = json.loads(pf.schema_arrow.metadata[b"geo"].decode("utf-8"))
+        primary_col = geo_meta.get("primary_column", "geometry")
+        crs = geo_meta["columns"][primary_col].get("crs")
+
+        assert crs is not None, "Projected CRS lost in FlatGeobuf roundtrip"
+        epsg_code = crs.get("id", {}).get("code")
+        assert epsg_code == 5070, f"Expected EPSG:5070, got {epsg_code}"
+
+    def test_projected_crs_geopackage_roundtrip(self, fields_5070_file, tmp_path):
+        """Projected CRS should be preserved in GeoPackage round-trip."""
+        gpkg_file = tmp_path / "projected.gpkg"
+        output_parquet = tmp_path / "roundtrip.parquet"
+
+        # Export to GeoPackage
+        write_format(fields_5070_file, str(gpkg_file), "geopackage")
+
+        # Import back
+        convert_to_geoparquet(str(gpkg_file), str(output_parquet))
+
+        # Verify CRS preserved
+        pf = pq.ParquetFile(output_parquet)
+        geo_meta = json.loads(pf.schema_arrow.metadata[b"geo"].decode("utf-8"))
+        primary_col = geo_meta.get("primary_column", "geometry")
+        crs = geo_meta["columns"][primary_col].get("crs")
+
+        assert crs is not None, "Projected CRS lost in GeoPackage roundtrip"
+        epsg_code = crs.get("id", {}).get("code")
+        assert epsg_code == 5070, f"Expected EPSG:5070, got {epsg_code}"
+
 
 class TestCLICRSRoundtrip:
     """Tests for CLI convert commands with CRS preservation."""
