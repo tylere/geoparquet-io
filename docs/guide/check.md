@@ -184,4 +184,3 @@ gpio check all partitions/ --check-sample 3
 - [CLI Reference: check](../cli/check.md)
 - [add command](add.md) - Add spatial indices
 - [sort command](sort.md)
-- [stac command](stac.md) - Generate STAC metadata
