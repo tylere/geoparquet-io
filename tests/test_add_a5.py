@@ -15,6 +15,9 @@ from click.testing import CliRunner
 from geoparquet_io.core.add_a5_column import add_a5_column, add_a5_table
 from tests.conftest import safe_unlink
 
+# Mark all tests as network-dependent (requires DuckDB community extension)
+pytestmark = pytest.mark.network
+
 
 class TestAddA5Table:
     """Tests for add_a5_table function."""

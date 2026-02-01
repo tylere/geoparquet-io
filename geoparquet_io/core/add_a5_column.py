@@ -158,8 +158,8 @@ def add_a5_column(
         output_parquet: Path to output file, "-" for stdout, or None for auto-detect
         a5_column_name: Name for the A5 column (default: 'a5_cell')
         a5_resolution: A5 resolution level (0-30)
-                      Res 10: ~2,100 km², Res 15: ~16 km², Res 20: ~130 m²,
-                      Res 25: ~1 m², Res 30: ~0.03 mm²
+                      Res 10: ~40.7 km², Res 15: ~39.4 m², Res 20: ~38.5 mm²,
+                      Res 25: ~38 μm², Res 30: ~37 nm²
                       Default: 15 (good balance for most use cases)
         dry_run: Whether to print SQL commands without executing them
         verbose: Whether to print verbose output
@@ -214,8 +214,8 @@ def add_a5_column(
 
     # Define the A5 SQL expression
     sql_expression = f"""a5_lonlat_to_cell(
-        ST_X(ST_Centroid({geom_col})),
-        ST_Y(ST_Centroid({geom_col})),
+        ST_X(ST_Centroid("{geom_col}")),
+        ST_Y(ST_Centroid("{geom_col}")),
         {a5_resolution}
     )"""
 
@@ -349,7 +349,3 @@ def _get_resolution_size(resolution):
         30: "37 nm²",
     }
     return sizes.get(resolution, f"resolution {resolution}")
-
-
-if __name__ == "__main__":
-    add_a5_column()

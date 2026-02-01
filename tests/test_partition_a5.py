@@ -10,6 +10,9 @@ from click.testing import CliRunner
 from geoparquet_io.core.partition_by_a5 import partition_by_a5
 from tests.conftest import safe_unlink
 
+# Mark all tests as network-dependent (requires DuckDB community extension)
+pytestmark = pytest.mark.network
+
 
 class TestPartitionByA5:
     """Tests for partition_by_a5 function."""
