@@ -24,6 +24,7 @@ from geoparquet_io.cli.decorators import (
     write_strategy_option,
 )
 from geoparquet_io.cli.fix_helpers import handle_fix_common
+from geoparquet_io.core.add_a5_column import add_a5_column as add_a5_column_impl
 from geoparquet_io.core.add_bbox_column import add_bbox_column as add_bbox_column_impl
 from geoparquet_io.core.add_bbox_metadata import add_bbox_metadata as add_bbox_metadata_impl
 from geoparquet_io.core.add_h3_column import add_h3_column as add_h3_column_impl
@@ -3113,6 +3114,85 @@ def add_h3(
             input_parquet,
             output_parquet,
             h3_name,
+            resolution,
+            dry_run,
+            verbose,
+            compression.upper(),
+            compression_level,
+            row_group_mb,
+            row_group_size,
+            None,
+            geoparquet_version,
+            overwrite=overwrite,
+        )
+    except StreamingError as e:
+        raise click.ClickException(str(e)) from None
+
+
+@add.command(name="a5", cls=SingleFileCommand)
+@click.argument("input_parquet")
+@click.argument("output_parquet", required=False, default=None)
+@click.option("--a5-name", default="a5_cell", help="Name for the A5 column (default: a5_cell)")
+@click.option(
+    "--resolution",
+    default=15,
+    type=click.IntRange(0, 30),
+    help="A5 resolution level (0-30). Res 10: ~41km², Res 15: ~39m², Res 20: ~39mm², Res 25: ~38μm². Default: 15",
+)
+@output_format_options
+@geoparquet_version_option
+@overwrite_option
+@dry_run_option
+@verbose_option
+@any_extension_option
+@show_sql_option
+def add_a5(
+    input_parquet,
+    output_parquet,
+    a5_name,
+    resolution,
+    compression,
+    compression_level,
+    row_group_size,
+    row_group_size_mb,
+    write_memory,
+    geoparquet_version,
+    overwrite,
+    dry_run,
+    verbose,
+    any_extension,
+    show_sql,
+):
+    """Add an A5 cell ID column to a GeoParquet file.
+
+    Computes A5 cell IDs based on geometry centroids. A5 is a discrete global grid
+    system that partitions the world into equal-area pentagonal cells based on a
+    dodecahedron, providing minimal shape distortion across the globe.
+
+    The cell ID is stored as a UBIGINT (unsigned 64-bit integer) for efficient storage.
+    Resolution determines cell size - higher values mean smaller cells with more precision.
+
+    Supports both local and remote (S3, GCS, Azure) inputs and outputs.
+    """
+    # Validate output early - provides helpful error if no output and not piping
+    from geoparquet_io.core.streaming import StreamingError, validate_output
+
+    try:
+        validate_output(output_parquet)
+    except StreamingError as e:
+        raise click.ClickException(str(e)) from None
+
+    # Validate .parquet extension
+    validate_parquet_extension(output_parquet, any_extension)
+
+    # Parse row group options
+    row_group_mb = parse_row_group_options(row_group_size, row_group_size_mb)
+
+    try:
+        add_a5_column_impl(
+            input_parquet,
+            output_parquet,
+            a5_name,
             resolution,
             dry_run,
             verbose,
