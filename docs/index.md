@@ -87,14 +87,12 @@ New to geoparquet-io? Start here:
 
 - [convert](cli/convert.md) - Convert vector formats to optimized GeoParquet
 - [inspect](cli/inspect.md) - Examine file metadata and preview data
-- [meta](cli/meta.md) - Deep dive into file structure and metadata
 - [extract](cli/extract.md) - Filter and subset GeoParquet files
 - [check](cli/check.md) - Validate files and fix issues automatically
 - [sort](cli/sort.md) - Spatially sort using Hilbert curves
 - [add](cli/add.md) - Enhance files with spatial indices
 - [partition](cli/partition.md) - Split files into optimized partitions
-- [upload](cli/upload.md) - Upload files to cloud storage (S3, GCS, Azure)
-- [stac](cli/stac.md) - Generate STAC metadata for datasets
+- [publish](cli/overview.md#publish) - Upload files and generate STAC metadata
 - [benchmark](cli/benchmark.md) - Compare conversion performance
 - [piping](guide/piping.md) - Chain commands with Unix pipes
 
