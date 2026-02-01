@@ -37,10 +37,11 @@ class TestShapefileCRSExport:
         prj_file = output_shp.with_suffix(".prj")
         assert prj_file.exists(), "Shapefile export missing .prj file for EPSG:4326"
 
-        # .prj must contain valid WKT CRS
+        # .prj must contain valid WKT CRS (WKT1 or WKT2 format)
         prj_content = prj_file.read_text()
         assert len(prj_content) > 0, ".prj file is empty"
-        assert "GEOGCS" in prj_content or "PROJCS" in prj_content, (
+        # WKT1 uses GEOGCS/PROJCS, WKT2 uses GEOGCRS/PROJCRS
+        assert any(k in prj_content for k in ("GEOGCS", "GEOGCRS", "PROJCS", "PROJCRS")), (
             ".prj file missing valid WKT CRS definition"
         )
 
@@ -208,7 +209,8 @@ class TestProjectedCRSExport:
         assert prj_file.exists(), "Shapefile missing .prj for projected CRS"
 
         prj_content = prj_file.read_text()
-        assert "PROJCS" in prj_content or "5070" in prj_content, (
+        # WKT1 uses PROJCS, WKT2 uses PROJCRS
+        assert ("5070" in prj_content) or any(k in prj_content for k in ("PROJCS", "PROJCRS")), (
             ".prj should contain projected CRS definition"
         )
 
