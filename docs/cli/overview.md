@@ -19,8 +19,11 @@ gpio [OPTIONS] COMMAND [ARGS]...
 - **[sort](sort.md)** - Spatially sort using Hilbert curves
 - **[add](add.md)** - Enhance files with spatial indices
 - **[partition](partition.md)** - Split files into optimized partitions
-- **publish** - Upload files to cloud storage and generate STAC metadata
 - **[benchmark](benchmark.md)** - Compare conversion performance
+
+### publish
+
+Upload files to cloud storage and generate STAC metadata for datasets. Use `gpio publish upload` for cloud storage uploads and `gpio publish stac` for STAC metadata generation.
 
 ## Global Options
 
