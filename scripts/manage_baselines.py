@@ -7,19 +7,19 @@ stored in GitHub Actions artifacts.
 
 Usage:
     # List available baselines
-    python scripts/manage_baselines.py list
+    uv run python scripts/manage_baselines.py list
 
     # Download a specific baseline
-    python scripts/manage_baselines.py download v0.9.0
+    uv run python scripts/manage_baselines.py download v0.9.0
 
     # Download multiple baselines
-    python scripts/manage_baselines.py download v0.9.0 v0.8.0 v0.7.0
+    uv run python scripts/manage_baselines.py download v0.9.0 v0.8.0 v0.7.0
 
     # Compare specific baselines
-    python scripts/manage_baselines.py compare v0.8.0 v0.9.0
+    uv run python scripts/manage_baselines.py compare v0.8.0 v0.9.0
 
     # Analyze trends
-    python scripts/manage_baselines.py trends v0.7.0 v0.8.0 v0.9.0
+    uv run python scripts/manage_baselines.py trends v0.7.0 v0.8.0 v0.9.0
 """
 
 import argparse
@@ -266,7 +266,15 @@ def cmd_compare(args):
 
     # Run comparison
     result = subprocess.run(
-        ["python", "scripts/version_benchmark.py", "--compare", str(files[0]), str(files[1])],
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/version_benchmark.py",
+            "--compare",
+            str(files[0]),
+            str(files[1]),
+        ],
         check=False,
     )
     sys.exit(result.returncode)
@@ -292,7 +300,7 @@ def cmd_trends(args):
         files.append(str(filepath))
 
     # Run trend analysis
-    cmd = ["python", "scripts/version_benchmark.py", "--trend"] + files
+    cmd = ["uv", "run", "python", "scripts/version_benchmark.py", "--trend"] + files
     if args.threshold:
         cmd.extend(["--trend-threshold", str(args.threshold)])
 

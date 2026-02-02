@@ -150,19 +150,19 @@ Use the `scripts/manage_baselines.py` tool to work with baselines stored in GitH
 
 ```bash
 # List available baselines
-python scripts/manage_baselines.py list
+uv run python scripts/manage_baselines.py list
 
 # Download specific baseline versions
-python scripts/manage_baselines.py download v0.9.0 v0.8.0
+uv run python scripts/manage_baselines.py download v0.9.0 v0.8.0
 
 # Compare specific baselines (downloads if needed)
-python scripts/manage_baselines.py compare v0.8.0 v0.9.0
+uv run python scripts/manage_baselines.py compare v0.8.0 v0.9.0
 
 # Analyze trends across multiple versions
-python scripts/manage_baselines.py trends v0.7.0 v0.8.0 v0.9.0
+uv run python scripts/manage_baselines.py trends v0.7.0 v0.8.0 v0.9.0
 
 # Use custom degradation threshold
-python scripts/manage_baselines.py trends v0.7.0 v0.8.0 v0.9.0 --threshold 0.10
+uv run python scripts/manage_baselines.py trends v0.7.0 v0.8.0 v0.9.0 --threshold 0.10
 ```
 
 **Authentication:**
