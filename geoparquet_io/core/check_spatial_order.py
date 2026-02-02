@@ -172,7 +172,9 @@ def check_spatial_order_bbox_stats(parquet_file, verbose=False, return_results=F
 
     # Handle edge cases
     if len(row_group_bboxes) <= 1:
-        # Can't check ordering with 0 or 1 row groups
+        # Can't meaningfully check ordering with 0 or 1 row groups
+        # (need at least 2 groups to compare consecutive pairs).
+        # Return ratio=0.0 (perfect ordering) since there's no evidence of poor ordering.
         if verbose:
             debug("Only one or zero row groups - assuming well ordered")
         ratio = 0.0
@@ -257,7 +259,10 @@ def check_spatial_order(
             return check_spatial_order_bbox_stats(
                 parquet_file, verbose=verbose, return_results=return_results, quiet=quiet
             )
-        except Exception as e:
+        except (ValueError, KeyError, IndexError) as e:
+            # ValueError: Invalid bbox column structure
+            # KeyError: Missing expected bbox fields (xmin, ymin, xmax, ymax)
+            # IndexError: Empty or malformed row group stats
             if verbose:
                 warn(f"Bbox-stats method failed: {e}, falling back to sampling")
             # Fall through to sampling method

@@ -229,12 +229,6 @@ class TestCheckSpatialOrderBboxStats:
             assert len(result["issues"]) > 0
             assert result["fix_available"] is True
 
-    def test_failing_threshold(self):
-        """Test that ratio >= 0.3 means passed=False."""
-        # This test will be valid once we have a poorly ordered test file
-        # For now, skip if we don't have such a file
-        pass
-
     def test_issues_and_recommendations_when_failed(self, unsorted_test_file):
         """Test that failing check includes proper issues and recommendations."""
         result = check_spatial_order_bbox_stats(
