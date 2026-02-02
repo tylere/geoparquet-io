@@ -62,6 +62,7 @@ from geoparquet_io.core.partition_by_kdtree import partition_by_kdtree as partit
 from geoparquet_io.core.partition_by_quadkey import (
     partition_by_quadkey as partition_by_quadkey_impl,
 )
+from geoparquet_io.core.partition_by_s2 import partition_by_s2 as partition_by_s2_impl
 from geoparquet_io.core.partition_by_string import (
     partition_by_string as partition_by_string_impl,
 )
@@ -3823,6 +3824,118 @@ def partition_h3(
         preview_limit,
         verbose,
         keep_h3_col,
+        force,
+        skip_analysis,
+        prefix,
+        None,
+        geoparquet_version,
+        compression=compression.upper(),
+        compression_level=compression_level,
+        row_group_size_mb=row_group_mb,
+        row_group_rows=row_group_size,
+        memory_limit=write_memory,
+    )
+
+
+@partition.command(name="s2", cls=SingleFileCommand)
+@click.argument("input_parquet")
+@click.argument("output_folder", required=False)
+@click.option(
+    "--s2-name",
+    default="s2_cell",
+    help="Name of S2 column to partition by (default: s2_cell)",
+)
+@click.option(
+    "--level",
+    type=click.IntRange(0, 30),
+    default=13,
+    help="S2 level for partitioning (0-30, default: 13)",
+)
+@click.option(
+    "--keep-s2-column",
+    is_flag=True,
+    help="Keep the S2 column in output files (default: excluded for non-Hive, included for Hive)",
+)
+@partition_options
+@output_format_options
+@verbose_option
+@geoparquet_version_option
+@show_sql_option
+def partition_s2(
+    input_parquet,
+    output_folder,
+    s2_name,
+    level,
+    keep_s2_column,
+    hive,
+    overwrite,
+    preview,
+    preview_limit,
+    force,
+    skip_analysis,
+    prefix,
+    compression,
+    compression_level,
+    row_group_size,
+    row_group_size_mb,
+    write_memory,
+    verbose,
+    geoparquet_version,
+    show_sql,
+):
+    """Partition a GeoParquet file by S2 cells at specified level.
+
+    Creates separate GeoParquet files based on S2 cell tokens at the specified level.
+    If the S2 column doesn't exist, it will be automatically added before partitioning.
+
+    S2 (Google's Spherical Geometry library) uses a hierarchical quadtree structure
+    that divides Earth's surface into cells. Level 0 has 6 base cells, and each
+    subsequent level subdivides by 4.
+
+    By default, the S2 column is excluded from output files (since it's redundant with the
+    partition path) unless using Hive-style partitioning. Use --keep-s2-column to explicitly
+    keep the column in all cases.
+
+    Use --preview to see what partitions would be created without actually creating files.
+
+    Examples:
+
+        # Preview partitions at level 10 (~78km² cells)
+        gpio partition s2 input.parquet --level 10 --preview
+
+        # Partition by S2 cells at default level 13 (~1.2km² cells)
+        gpio partition s2 input.parquet output/
+
+        # Partition with S2 column kept in output files
+        gpio partition s2 input.parquet output/ --keep-s2-column
+
+        # Partition with custom S2 column name
+        gpio partition s2 input.parquet output/ --s2-name my_s2
+
+        # Use Hive-style partitioning at level 10 (S2 column included by default)
+        gpio partition s2 input.parquet output/ --level 10 --hive
+    """
+    # If preview mode, output_folder is not required
+    if not preview and not output_folder:
+        raise click.UsageError("OUTPUT_FOLDER is required unless using --preview")
+
+    # Validate mutual exclusivity of row group options and get MB value
+    row_group_mb = parse_row_group_options(row_group_size, row_group_size_mb)
+
+    # Convert flag to None if not explicitly set, so implementation can determine default
+    keep_s2_col = True if keep_s2_column else None
+
+    partition_by_s2_impl(
+        input_parquet,
+        output_folder,
+        s2_name,
+        level,
+        hive,
+        overwrite,
+        preview,
+        preview_limit,
+        verbose,
+        keep_s2_col,
         force,
         skip_analysis,
         prefix,
