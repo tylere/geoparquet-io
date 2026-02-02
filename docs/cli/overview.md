@@ -14,14 +14,16 @@ gpio [OPTIONS] COMMAND [ARGS]...
 
 - **[convert](convert.md)** - Convert vector formats to optimized GeoParquet
 - **[inspect](inspect.md)** - Examine file metadata and preview data
+- **[extract](extract.md)** - Filter and subset GeoParquet files
 - **[check](check.md)** - Validate files and fix issues automatically
-- **[validate](validate.md)** - Validate against GeoParquet specification
 - **[sort](sort.md)** - Spatially sort using Hilbert curves
 - **[add](add.md)** - Enhance files with spatial indices
 - **[partition](partition.md)** - Split files into optimized partitions
-- **[upload](upload.md)** - Upload files to cloud storage (S3, GCS, Azure)
-- **[stac](stac.md)** - Generate STAC metadata for datasets
 - **[benchmark](benchmark.md)** - Compare conversion performance
+
+### publish
+
+Upload files to cloud storage and generate STAC metadata for datasets. Use `gpio publish upload` for cloud storage uploads and `gpio publish stac` for STAC metadata generation.
 
 ## Global Options
 
@@ -47,7 +49,7 @@ gpio check --help
 gpio add bbox --help
 gpio partition h3 --help
 gpio check spatial --help
-gpio publish stac --help
+gpio convert reproject --help
 ```
 
 ## Legacy Alias
