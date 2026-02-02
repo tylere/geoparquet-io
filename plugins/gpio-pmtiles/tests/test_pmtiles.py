@@ -193,10 +193,11 @@ def test_build_tippecanoe_command_basic():
         min_zoom=None,
         max_zoom=None,
         verbose=False,
+        attribution=None,
     )
 
     assert "tippecanoe" in cmd
-    assert "-P" in cmd  # Parallel mode
+    assert "--read-parallel" in cmd  # Parallel mode (updated)
     assert "-o" in cmd
     assert "output.pmtiles" in cmd
     assert "-l" in cmd
@@ -215,14 +216,97 @@ def test_build_tippecanoe_command_with_zoom():
         min_zoom=0,
         max_zoom=14,
         verbose=True,
+        attribution=None,
     )
 
     assert "-Z" in cmd
     assert "0" in cmd
-    assert "-z" in cmd
-    assert "14" in cmd
+    assert "--maximum-zoom=14" in cmd  # Updated to use --maximum-zoom
     assert "-zg" not in cmd  # No auto detection when explicit
     assert "--progress-interval=1" in cmd  # Verbose mode
+
+
+def test_build_tippecanoe_command_with_default_attribution():
+    """Test that default attribution is included."""
+    from gpio_pmtiles.core import _build_tippecanoe_command
+
+    cmd = _build_tippecanoe_command(
+        output_path="output.pmtiles",
+        layer="test_layer",
+        min_zoom=None,
+        max_zoom=None,
+        verbose=False,
+        attribution=None,
+    )
+
+    # Should include default geoparquet-io attribution
+    assert any("--attribution=" in arg for arg in cmd)
+    assert any("geoparquet.io" in arg for arg in cmd)
+
+
+def test_build_tippecanoe_command_with_custom_attribution():
+    """Test building tippecanoe command with custom attribution."""
+    from gpio_pmtiles.core import _build_tippecanoe_command
+
+    custom_attr = '<a href="https://fieldmaps.io/data/" target="_blank">&copy; FieldMaps</a>'
+    cmd = _build_tippecanoe_command(
+        output_path="output.pmtiles",
+        layer="test_layer",
+        min_zoom=None,
+        max_zoom=11,
+        verbose=False,
+        attribution=custom_attr,
+    )
+
+    # Should include custom attribution
+    assert any("--attribution=" in arg for arg in cmd)
+    assert any("fieldmaps.io" in arg for arg in cmd)
+    assert any("FieldMaps" in arg for arg in cmd)
+
+
+def test_build_tippecanoe_command_has_new_flags():
+    """Test that new production-quality flags are included."""
+    from gpio_pmtiles.core import _build_tippecanoe_command
+
+    cmd = _build_tippecanoe_command(
+        output_path="output.pmtiles",
+        layer="test_layer",
+        min_zoom=None,
+        max_zoom=11,
+        verbose=False,
+        attribution=None,
+    )
+
+    # Should use --read-parallel instead of -P
+    assert "--read-parallel" in cmd
+    assert "-P" not in cmd
+
+    # Should include new optimization flags
+    assert "--simplify-only-low-zooms" in cmd
+    assert "--no-simplification-of-shared-nodes" in cmd
+    assert "--no-tile-size-limit" in cmd
+    assert "--force" in cmd
+
+    # Should still have existing flags
+    assert "--drop-densest-as-needed" in cmd
+
+
+def test_build_tippecanoe_command_uses_maximum_zoom():
+    """Test that --maximum-zoom is used instead of -z."""
+    from gpio_pmtiles.core import _build_tippecanoe_command
+
+    cmd = _build_tippecanoe_command(
+        output_path="output.pmtiles",
+        layer="test_layer",
+        min_zoom=0,
+        max_zoom=11,
+        verbose=False,
+        attribution=None,
+    )
+
+    # Should use --maximum-zoom instead of -z
+    assert "--maximum-zoom=11" in cmd
+    assert "-z" not in cmd or (cmd[cmd.index("-z") + 1] if "-z" in cmd else None) != "11"
 
 
 # Path validation tests

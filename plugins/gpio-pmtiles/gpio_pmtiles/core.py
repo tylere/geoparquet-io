@@ -162,9 +162,11 @@ def _build_tippecanoe_command(
     min_zoom: int | None,
     max_zoom: int | None,
     verbose: bool,
+    attribution: str | None = None,
 ) -> list[str]:
-    """Build the tippecanoe command."""
-    cmd = ["tippecanoe", "-P", "-o", output_path]
+    """Build the tippecanoe command with production-quality settings."""
+    # Start with basic command - use --read-parallel instead of -P
+    cmd = ["tippecanoe", "--read-parallel", "-o", output_path]
 
     # Add layer name
     if layer:
@@ -174,16 +176,26 @@ def _build_tippecanoe_command(
         layer_name = Path(output_path).stem
         cmd.extend(["-l", layer_name])
 
-    # Add zoom levels
+    # Add attribution (default to geoparquet-io)
+    if attribution is None:
+        attribution = '<a href="https://geoparquet.io/" target="_blank">geoparquet-io</a>'
+    cmd.append(f"--attribution={attribution}")
+
+    # Add zoom levels - use --maximum-zoom for consistency with FieldMaps pattern
     if min_zoom is not None and max_zoom is not None:
-        cmd.extend(["-Z", str(min_zoom), "-z", str(max_zoom)])
+        cmd.extend(["-Z", str(min_zoom)])
+        cmd.append(f"--maximum-zoom={max_zoom}")
     elif max_zoom is not None:
-        cmd.extend(["-z", str(max_zoom)])
+        cmd.append(f"--maximum-zoom={max_zoom}")
     else:
         # Use tippecanoe's auto zoom detection
         cmd.append("-zg")
 
-    # Recommended defaults for PMTiles
+    # Production-quality optimization flags
+    cmd.append("--simplify-only-low-zooms")
+    cmd.append("--no-simplification-of-shared-nodes")
+    cmd.append("--no-tile-size-limit")
+    cmd.append("--force")
     cmd.append("--drop-densest-as-needed")
 
     if verbose:
@@ -287,6 +299,7 @@ def create_pmtiles_from_geoparquet(
     verbose: bool = False,
     profile: str | None = None,
     src_crs: str | None = None,
+    attribution: str | None = None,
 ) -> None:
     """
     Create PMTiles using gpio streaming + tippecanoe subprocess.
@@ -310,6 +323,7 @@ def create_pmtiles_from_geoparquet(
         verbose: Enable verbose output
         profile: AWS profile name for S3 files
         src_crs: Source CRS for reprojection to WGS84 (if metadata is wrong)
+        attribution: Attribution HTML for the tiles (defaults to geoparquet-io link)
 
     Raises:
         TippecanoeNotFoundError: If tippecanoe is not in PATH
@@ -329,7 +343,9 @@ def create_pmtiles_from_geoparquet(
         input_path, bbox, where, include_cols, precision, verbose, profile, src_crs
     )
 
-    tippecanoe_cmd = _build_tippecanoe_command(output_path, layer, min_zoom, max_zoom, verbose)
+    tippecanoe_cmd = _build_tippecanoe_command(
+        output_path, layer, min_zoom, max_zoom, verbose, attribution
+    )
 
     # Run the pipeline
     _run_pipeline(gpio_commands, tippecanoe_cmd, verbose)
