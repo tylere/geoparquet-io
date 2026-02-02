@@ -8,6 +8,9 @@ consistency and make it easy to change values in one place.
 # Default column name for H3 cell IDs
 DEFAULT_H3_COLUMN_NAME = "h3_cell"
 
+# Default column name for A5 cell IDs
+DEFAULT_A5_COLUMN_NAME = "a5_cell"
+
 # Default column name for quadkey cells
 DEFAULT_QUADKEY_COLUMN_NAME = "quadkey"
 

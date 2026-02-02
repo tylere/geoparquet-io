@@ -24,6 +24,7 @@ from geoparquet_io.cli.decorators import (
     write_strategy_option,
 )
 from geoparquet_io.cli.fix_helpers import handle_fix_common
+from geoparquet_io.core.add_a5_column import add_a5_column as add_a5_column_impl
 from geoparquet_io.core.add_bbox_column import add_bbox_column as add_bbox_column_impl
 from geoparquet_io.core.add_bbox_metadata import add_bbox_metadata as add_bbox_metadata_impl
 from geoparquet_io.core.add_h3_column import add_h3_column as add_h3_column_impl
@@ -54,6 +55,7 @@ from geoparquet_io.core.logging_config import configure_verbose, setup_cli_loggi
 from geoparquet_io.core.partition_admin_hierarchical import (
     partition_by_admin_hierarchical as partition_admin_hierarchical_impl,
 )
+from geoparquet_io.core.partition_by_a5 import partition_by_a5 as partition_by_a5_impl
 from geoparquet_io.core.partition_by_h3 import partition_by_h3 as partition_by_h3_impl
 from geoparquet_io.core.partition_by_kdtree import partition_by_kdtree as partition_by_kdtree_impl
 from geoparquet_io.core.partition_by_quadkey import (
@@ -3128,6 +3130,85 @@ def add_h3(
         raise click.ClickException(str(e)) from None
 
 
+@add.command(name="a5", cls=SingleFileCommand)
+@click.argument("input_parquet")
+@click.argument("output_parquet", required=False, default=None)
+@click.option("--a5-name", default="a5_cell", help="Name for the A5 column (default: a5_cell)")
+@click.option(
+    "--resolution",
+    default=15,
+    type=click.IntRange(0, 30),
+    help="A5 resolution level (0-30). Res 10: ~41km², Res 15: ~39m², Res 20: ~39mm², Res 25: ~38μm². Default: 15",
+)
+@output_format_options
+@geoparquet_version_option
+@overwrite_option
+@dry_run_option
+@verbose_option
+@any_extension_option
+@show_sql_option
+def add_a5(
+    input_parquet,
+    output_parquet,
+    a5_name,
+    resolution,
+    compression,
+    compression_level,
+    row_group_size,
+    row_group_size_mb,
+    write_memory,
+    geoparquet_version,
+    overwrite,
+    dry_run,
+    verbose,
+    any_extension,
+    show_sql,
+):
+    """Add an A5 cell ID column to a GeoParquet file.
+
+    Computes A5 cell IDs based on geometry centroids. A5 is a discrete global grid
+    system that partitions the world into equal-area pentagonal cells based on a
+    dodecahedron, providing minimal shape distortion across the globe.
+
+    The cell ID is stored as a UBIGINT (unsigned 64-bit integer) for efficient storage.
+    Resolution determines cell size - higher values mean smaller cells with more precision.
+
+    Supports both local and remote (S3, GCS, Azure) inputs and outputs.
+    """
+    # Validate output early - provides helpful error if no output and not piping
+    from geoparquet_io.core.streaming import StreamingError, validate_output
+
+    try:
+        validate_output(output_parquet)
+    except StreamingError as e:
+        raise click.ClickException(str(e)) from None
+
+    # Validate .parquet extension
+    validate_parquet_extension(output_parquet, any_extension)
+
+    # Parse row group options
+    row_group_mb = parse_row_group_options(row_group_size, row_group_size_mb)
+
+    try:
+        add_a5_column_impl(
+            input_parquet,
+            output_parquet,
+            a5_name,
+            resolution,
+            dry_run,
+            verbose,
+            compression.upper(),
+            compression_level,
+            row_group_mb,
+            row_group_size,
+            None,
+            geoparquet_version,
+            overwrite=overwrite,
+        )
+    except StreamingError as e:
+        raise click.ClickException(str(e)) from None
+
+
 @add.command(name="kdtree", cls=SingleFileCommand)
 @click.argument("input_parquet")
 @click.argument("output_parquet")
@@ -3662,6 +3743,114 @@ def partition_h3(
         preview_limit,
         verbose,
         keep_h3_col,
+        force,
+        skip_analysis,
+        prefix,
+        None,
+        geoparquet_version,
+        compression=compression.upper(),
+        compression_level=compression_level,
+        row_group_size_mb=row_group_mb,
+        row_group_rows=row_group_size,
+        memory_limit=write_memory,
+    )
+
+
+@partition.command(name="a5", cls=SingleFileCommand)
+@click.argument("input_parquet")
+@click.argument("output_folder", required=False)
+@click.option(
+    "--a5-name",
+    default="a5_cell",
+    help="Name of A5 column to partition by (default: a5_cell)",
+)
+@click.option(
+    "--resolution",
+    type=click.IntRange(0, 30),
+    default=15,
+    help="A5 resolution for partitioning (0-30, default: 15)",
+)
+@click.option(
+    "--keep-a5-column",
+    is_flag=True,
+    help="Keep the A5 column in output files (default: excluded for non-Hive, included for Hive)",
+)
+@partition_options
+@output_format_options
+@verbose_option
+@geoparquet_version_option
+@show_sql_option
+def partition_a5(
+    input_parquet,
+    output_folder,
+    a5_name,
+    resolution,
+    keep_a5_column,
+    hive,
+    overwrite,
+    preview,
+    preview_limit,
+    force,
+    skip_analysis,
+    prefix,
+    compression,
+    compression_level,
+    row_group_size,
+    row_group_size_mb,
+    write_memory,
+    verbose,
+    geoparquet_version,
+    show_sql,
+):
+    """Partition a GeoParquet file by A5 cells at specified resolution.
+
+    Creates separate GeoParquet files based on A5 cell IDs at the specified resolution.
+    If the A5 column doesn't exist, it will be automatically added before partitioning.
+
+    By default, the A5 column is excluded from output files (since it's redundant with the
+    partition path) unless using Hive-style partitioning. Use --keep-a5-column to explicitly
+    keep the column in all cases.
+
+    Use --preview to see what partitions would be created without actually creating files.
+
+    Examples:
+
+        # Preview partitions at resolution 10 (~41km² cells)
+        gpio partition a5 input.parquet --resolution 10 --preview
+
+        # Partition by A5 cells at default resolution 15 (A5 column excluded from output)
+        gpio partition a5 input.parquet output/
+
+        # Partition with A5 column kept in output files
+        gpio partition a5 input.parquet output/ --keep-a5-column
+
+        # Partition with custom A5 column name
+        gpio partition a5 input.parquet output/ --a5-name my_a5
+
+        # Use Hive-style partitioning at resolution 12 (A5 column included by default)
+        gpio partition a5 input.parquet output/ --resolution 12 --hive
+    """
+    # If preview mode, output_folder is not required
+    if not preview and not output_folder:
+        raise click.UsageError("OUTPUT_FOLDER is required unless using --preview")
+
+    # Validate mutual exclusivity of row group options and get MB value
+    row_group_mb = parse_row_group_options(row_group_size, row_group_size_mb)
+
+    # Convert flag to None if not explicitly set, so implementation can determine default
+    keep_a5_col = True if keep_a5_column else None
+
+    partition_by_a5_impl(
+        input_parquet,
+        output_folder,
+        a5_name,
+        resolution,
+        hive,
+        overwrite,
+        preview,
+        preview_limit,
+        verbose,
+        keep_a5_col,
         force,
         skip_analysis,
         prefix,
