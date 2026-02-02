@@ -171,6 +171,29 @@ gpio add s2 input.parquet output.parquet --level 18
 gpio add s2 input.parquet output.parquet --row-group-size-mb 256MB
 ```
 
+### Technical Details
+
+S2 cell IDs are computed using DuckDB's geography extension:
+
+```sql
+s2_cell_token(
+    s2_cell_parent(
+        s2_cellfromlonlat(
+            ST_X(ST_Centroid(geometry)),
+            ST_Y(ST_Centroid(geometry))
+        ),
+        level
+    )
+)
+```
+
+- **s2_cellfromlonlat**: Converts lon/lat to S2 cell at maximum precision (level 30)
+- **s2_cell_parent**: Gets parent cell at desired level
+- **s2_cell_token**: Converts to hex token string for portability
+
+Cell IDs are stored as hex strings (e.g., `"89c25901"`) rather than integers for
+maximum portability across systems.
+
 ## KD-Tree Partitions
 
 Add balanced spatial partition IDs using KD-tree:

@@ -3852,6 +3852,17 @@ def partition_h3(
     help="S2 level for partitioning (0-30, default: 13)",
 )
 @click.option(
+    "--auto",
+    is_flag=True,
+    help="Auto-select S2 level based on target rows per partition (mutually exclusive with --level)",
+)
+@click.option(
+    "--target-rows",
+    type=int,
+    default=100000,
+    help="Target rows per partition for auto mode (default: 100,000)",
+)
+@click.option(
     "--keep-s2-column",
     is_flag=True,
     help="Keep the S2 column in output files (default: excluded for non-Hive, included for Hive)",
@@ -3866,6 +3877,8 @@ def partition_s2(
     output_folder,
     s2_name,
     level,
+    auto,
+    target_rows,
     keep_s2_column,
     hive,
     overwrite,
@@ -3885,12 +3898,15 @@ def partition_s2(
 ):
     """Partition a GeoParquet file by S2 cells at specified level.
 
-    Creates separate GeoParquet files based on S2 cell tokens at the specified level.
-    If the S2 column doesn't exist, it will be automatically added before partitioning.
+    Creates separate GeoParquet files based on S2 cell tokens. If the S2 column
+    doesn't exist, it will be automatically added before partitioning.
 
     S2 (Google's Spherical Geometry library) uses a hierarchical quadtree structure
     that divides Earth's surface into cells. Level 0 has 6 base cells, and each
     subsequent level subdivides by 4.
+
+    By default, uses level 13 (~1.2km² cells). Use --auto to automatically select
+    the optimal level based on your dataset size and --target-rows setting.
 
     By default, the S2 column is excluded from output files (since it's redundant with the
     partition path) unless using Hive-style partitioning. Use --keep-s2-column to explicitly
@@ -3900,8 +3916,14 @@ def partition_s2(
 
     Examples:
 
-        # Preview partitions at level 10 (~78km² cells)
-        gpio partition s2 input.parquet --level 10 --preview
+        # Auto-select level for ~50k rows per partition
+        gpio partition s2 input.parquet output/ --auto --target-rows 50000
+
+        # Explicit level 10 (~78km² cells)
+        gpio partition s2 input.parquet output/ --level 10
+
+        # Preview auto-selected partitions
+        gpio partition s2 input.parquet --auto --preview
 
         # Partition by S2 cells at default level 13 (~1.2km² cells)
         gpio partition s2 input.parquet output/
@@ -3918,6 +3940,18 @@ def partition_s2(
     # If preview mode, output_folder is not required
     if not preview and not output_folder:
         raise click.UsageError("OUTPUT_FOLDER is required unless using --preview")
+
+    # Validate mutually exclusive level/auto options
+    if level != 13 and auto:  # 13 is the default
+        raise click.UsageError("--level and --auto are mutually exclusive")
+
+    # Calculate level in auto mode
+    if auto:
+        from geoparquet_io.core.partition_by_s2 import _calculate_s2_level_for_target
+
+        level = _calculate_s2_level_for_target(input_parquet, target_rows, verbose)
+        if verbose:
+            click.echo(f"Auto-selected S2 level: {level}", err=True)
 
     # Validate mutual exclusivity of row group options and get MB value
     row_group_mb = parse_row_group_options(row_group_size, row_group_size_mb)

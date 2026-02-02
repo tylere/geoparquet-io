@@ -17,7 +17,11 @@ import click
 
 from geoparquet_io.core.add_s2_column import add_s2_column
 from geoparquet_io.core.common import safe_file_url
-from geoparquet_io.core.constants import DEFAULT_S2_COLUMN_NAME, DEFAULT_S2_LEVEL
+from geoparquet_io.core.constants import (
+    DEFAULT_S2_COLUMN_NAME,
+    DEFAULT_S2_COMPRESSION_LEVEL,
+    DEFAULT_S2_LEVEL,
+)
 from geoparquet_io.core.logging_config import (
     configure_verbose,
     debug,
@@ -63,12 +67,9 @@ def _ensure_s2_column(input_parquet, s2_column_name, level, verbose):
             output_parquet=temp_file,
             s2_column_name=s2_column_name,
             s2_level=level,
-            dry_run=False,
             verbose=verbose,
             compression="ZSTD",
-            compression_level=15,
-            row_group_size_mb=None,
-            row_group_rows=None,
+            compression_level=DEFAULT_S2_COMPRESSION_LEVEL,
         )
         if verbose:
             debug(f"S2 column added successfully at level {level}")
@@ -106,6 +107,113 @@ def _run_preview(input_parquet, s2_column_name, preview_limit, verbose):
         limit=preview_limit,
         verbose=verbose,
     )
+
+
+def _calculate_s2_level_for_target(
+    input_parquet: str,
+    target_rows_per_partition: int,
+    verbose: bool = False,
+) -> int:
+    """Calculate optimal S2 level for target rows per partition.
+
+    S2 cells follow: total_cells(level) = 6 × 4^level
+
+    Args:
+        input_parquet: Input file path
+        target_rows_per_partition: Target rows per partition
+        verbose: Enable verbose logging
+
+    Returns:
+        int: Recommended S2 level (0-30)
+    """
+    import math
+
+    from geoparquet_io.core.duckdb_metadata import get_row_count
+
+    total_rows = get_row_count(input_parquet)
+
+    if verbose:
+        debug(f"Total rows: {total_rows:,}")
+        debug(f"Target rows per partition: {target_rows_per_partition:,}")
+
+    # Calculate desired number of partitions
+    desired_partitions = max(1, total_rows / target_rows_per_partition)
+
+    # S2 formula: partitions = 6 × 4^level
+    # Solve for level: level = log(partitions / 6) / log(4)
+    if desired_partitions <= 6:
+        level = 0
+    else:
+        level = math.log(desired_partitions / 6) / math.log(4)
+        level = round(level)  # Round to nearest integer
+
+    # Clamp to valid range
+    level = max(0, min(30, level))
+
+    actual_partitions = 6 * (4**level)
+    actual_rows_per_partition = (
+        total_rows / actual_partitions if actual_partitions > 0 else total_rows
+    )
+
+    if verbose:
+        debug(f"Calculated S2 level: {level}")
+        debug(f"Expected partitions: ~{actual_partitions:,}")
+        debug(f"Expected rows/partition: ~{actual_rows_per_partition:,.0f}")
+
+    return level
+
+
+def _partition_with_temp_file(
+    working_parquet: str,
+    temp_file: str | None,
+    output_folder: str,
+    s2_column_name: str,
+    hive: bool,
+    overwrite: bool,
+    verbose: bool,
+    keep_s2_column: bool,
+    force: bool,
+    skip_analysis: bool,
+    filename_prefix: str | None,
+    profile: str | None,
+    geoparquet_version: str | None,
+    compression: str,
+    compression_level: int,
+    row_group_size_mb: int | None,
+    row_group_rows: int | None,
+    memory_limit: str | None,
+) -> int:
+    """Execute partitioning and return partition count.
+
+    Handles temp file cleanup automatically.
+    """
+    try:
+        num_partitions = partition_by_column(
+            input_parquet=working_parquet,
+            output_folder=output_folder,
+            column_name=s2_column_name,
+            column_prefix_length=None,
+            hive=hive,
+            overwrite=overwrite,
+            verbose=verbose,
+            keep_partition_column=keep_s2_column,
+            force=force,
+            skip_analysis=skip_analysis,
+            filename_prefix=filename_prefix,
+            profile=profile,
+            geoparquet_version=geoparquet_version,
+            compression=compression,
+            compression_level=compression_level,
+            row_group_size_mb=row_group_size_mb,
+            row_group_rows=row_group_rows,
+            memory_limit=memory_limit,
+        )
+        return num_partitions
+    finally:
+        if temp_file and os.path.exists(temp_file):
+            if verbose:
+                debug("Cleaning up temporary S2-enriched file...")
+            os.remove(temp_file)
 
 
 def partition_by_s2(
@@ -189,38 +297,32 @@ def partition_by_s2(
 
         progress(f"Partitioning by S2 cells at level {level} (column: '{s2_column_name}')")
 
-        try:
-            num_partitions = partition_by_column(
-                input_parquet=working_parquet,
-                output_folder=output_folder,
-                column_name=s2_column_name,
-                column_prefix_length=None,
-                hive=hive,
-                overwrite=overwrite,
-                verbose=verbose,
-                keep_partition_column=keep_s2_column,
-                force=force,
-                skip_analysis=skip_analysis,
-                filename_prefix=filename_prefix,
-                profile=profile,
-                geoparquet_version=geoparquet_version,
-                compression=compression,
-                compression_level=compression_level,
-                row_group_size_mb=row_group_size_mb,
-                row_group_rows=row_group_rows,
-                memory_limit=memory_limit,
-            )
+        num_partitions = _partition_with_temp_file(
+            working_parquet,
+            temp_file,
+            output_folder,
+            s2_column_name,
+            hive,
+            overwrite,
+            verbose,
+            keep_s2_column,
+            force,
+            skip_analysis,
+            filename_prefix,
+            profile,
+            geoparquet_version,
+            compression,
+            compression_level,
+            row_group_size_mb,
+            row_group_rows,
+            memory_limit,
+        )
 
-            total_size_mb, avg_size_mb = calculate_partition_stats(output_folder, num_partitions)
-            success(
-                f"\nCreated {num_partitions} partition(s) in {output_folder} "
-                f"(total: {total_size_mb:.2f} MB, avg: {avg_size_mb:.2f} MB)"
-            )
-        finally:
-            if temp_file and os.path.exists(temp_file):
-                if verbose:
-                    debug("Cleaning up temporary S2-enriched file...")
-                os.remove(temp_file)
+        total_size_mb, avg_size_mb = calculate_partition_stats(output_folder, num_partitions)
+        success(
+            f"\nCreated {num_partitions} partition(s) in {output_folder} "
+            f"(total: {total_size_mb:.2f} MB, avg: {avg_size_mb:.2f} MB)"
+        )
     finally:
         # Clean up stdin temp file
         if stdin_temp_file and os.path.exists(stdin_temp_file):

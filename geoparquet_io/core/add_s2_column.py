@@ -18,7 +18,10 @@ from geoparquet_io.core.common import (
     find_primary_geometry_column,
     get_duckdb_connection,
 )
-from geoparquet_io.core.constants import DEFAULT_S2_COLUMN_NAME, DEFAULT_S2_LEVEL
+from geoparquet_io.core.constants import (
+    DEFAULT_S2_COLUMN_NAME,
+    DEFAULT_S2_LEVEL,
+)
 from geoparquet_io.core.logging_config import configure_verbose, debug, progress, success
 from geoparquet_io.core.partition_reader import require_single_file
 from geoparquet_io.core.stream_io import execute_transform
@@ -27,6 +30,69 @@ from geoparquet_io.core.streaming import (
     is_stdin,
     should_stream_output,
 )
+
+
+def _load_geography_extension(con):
+    """Load DuckDB geography extension for S2 support."""
+    con.execute("INSTALL geography FROM community")
+    con.execute("LOAD geography")
+
+
+def _create_geometry_view(con, table, geom_col):
+    """Create view with BLOB-to-geometry conversion if needed.
+
+    Returns:
+        str: Source reference ('__input_table' or '__input_view')
+    """
+    columns_info = con.execute("DESCRIBE __input_table").fetchall()
+    geom_is_blob = any(col[0] == geom_col and "BLOB" in col[1].upper() for col in columns_info)
+
+    if geom_is_blob and geom_col in table.column_names:
+        # Create view with geometry conversion
+        # Quote all column names for safety with special characters
+        other_cols = [f'"{c}"' for c in table.column_names if c != geom_col]
+        col_defs = other_cols + [f'ST_GeomFromWKB("{geom_col}") AS "{geom_col}"']
+        view_query = f"CREATE VIEW __input_view AS SELECT {', '.join(col_defs)} FROM __input_table"
+        con.execute(view_query)
+        return "__input_view"
+    return "__input_table"
+
+
+def _build_s2_select_query(table, source_ref, geom_col, s2_column_name, level):
+    """Build SELECT query to add S2 column to table.
+
+    Returns:
+        str: Complete SELECT query with S2 expression
+    """
+    # Build S2 cell expression
+    s2_expr = f"""s2_cell_token(
+        s2_cell_parent(
+            s2_cellfromlonlat(
+                ST_X(ST_Centroid("{geom_col}")),
+                ST_Y(ST_Centroid("{geom_col}"))
+            ),
+            {level}
+        )
+    )"""
+
+    # Build column list
+    other_cols = [f'"{c}"' for c in table.column_names if c != geom_col]
+    select_cols = ", ".join(other_cols) if other_cols else ""
+
+    # Build SELECT query
+    if select_cols:
+        return f"""
+            SELECT {select_cols},
+                   ST_AsWKB("{geom_col}") AS "{geom_col}",
+                   {s2_expr} AS "{s2_column_name}"
+            FROM {source_ref}
+        """
+    else:
+        return f"""
+            SELECT ST_AsWKB("{geom_col}") AS "{geom_col}",
+                   {s2_expr} AS "{s2_column_name}"
+            FROM {source_ref}
+        """
 
 
 def add_s2_table(
@@ -49,71 +115,23 @@ def add_s2_table(
     Returns:
         New table with S2 column added
     """
+    # Validate level
+    if not 0 <= level <= 30:
+        raise ValueError(f"S2 level must be between 0 and 30, got {level}")
+
     # Find geometry column
     geom_col = geometry_column or find_geometry_column_from_table(table)
     if not geom_col:
         geom_col = "geometry"
 
-    # Validate level
-    if not 0 <= level <= 30:
-        raise ValueError(f"S2 level must be between 0 and 30, got {level}")
-
     # Register table and execute query
     con = get_duckdb_connection(load_spatial=True, load_httpfs=False)
     try:
-        # Load geography extension for S2 support
-        con.execute("INSTALL geography FROM community")
-        con.execute("LOAD geography")
-
+        _load_geography_extension(con)
         con.register("__input_table", table)
 
-        # Check if geometry column is BLOB (needs conversion)
-        columns_info = con.execute("DESCRIBE __input_table").fetchall()
-        geom_is_blob = any(col[0] == geom_col and "BLOB" in col[1].upper() for col in columns_info)
-
-        if geom_is_blob and geom_col in table.column_names:
-            # Create view with geometry conversion
-            # Quote all column names for safety with special characters
-            other_cols = [f'"{c}"' for c in table.column_names if c != geom_col]
-            col_defs = other_cols + [f'ST_GeomFromWKB("{geom_col}") AS "{geom_col}"']
-            view_query = (
-                f"CREATE VIEW __input_view AS SELECT {', '.join(col_defs)} FROM __input_table"
-            )
-            con.execute(view_query)
-            source_ref = "__input_view"
-        else:
-            source_ref = "__input_table"
-
-        # Build S2 column query - convert to token (string) for portability
-        # s2_cellfromlonlat returns a cell at level 30, use s2_cell_parent to get desired level
-        s2_expr = f"""s2_cell_token(
-            s2_cell_parent(
-                s2_cellfromlonlat(
-                    ST_X(ST_Centroid("{geom_col}")),
-                    ST_Y(ST_Centroid("{geom_col}"))
-                ),
-                {level}
-            )
-        )"""
-
-        # Get non-geometry columns
-        other_cols = [f'"{c}"' for c in table.column_names if c != geom_col]
-        select_cols = ", ".join(other_cols) if other_cols else ""
-
-        # Build SELECT with geometry converted back to WKB
-        if select_cols:
-            query = f"""
-                SELECT {select_cols},
-                       ST_AsWKB("{geom_col}") AS "{geom_col}",
-                       {s2_expr} AS "{s2_column_name}"
-                FROM {source_ref}
-            """
-        else:
-            query = f"""
-                SELECT ST_AsWKB("{geom_col}") AS "{geom_col}",
-                       {s2_expr} AS "{s2_column_name}"
-                FROM {source_ref}
-            """
+        source_ref = _create_geometry_view(con, table, geom_col)
+        query = _build_s2_select_query(table, source_ref, geom_col, s2_column_name, level)
         result = con.execute(query).fetch_arrow_table()
 
         # Preserve metadata

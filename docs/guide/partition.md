@@ -145,6 +145,31 @@ Partition by S2 spherical cells:
 
 If S2 column doesn't exist, it's automatically added.
 
+### Auto-Resolution
+
+Let gpio automatically select the optimal S2 level:
+
+=== "CLI"
+
+    ```bash
+    # Auto-select level for ~100k rows per partition (default)
+    gpio partition s2 input.parquet output/ --auto
+
+    # Target 50k rows per partition
+    gpio partition s2 input.parquet output/ --auto --target-rows 50000
+
+    # Preview auto-selected partitions
+    gpio partition s2 input.parquet --auto --preview
+    ```
+
+=== "Python"
+
+    ```python
+    # Not yet implemented in Python API
+    ```
+
+Auto-resolution calculates the optimal S2 level based on your dataset size and target rows per partition. The calculation uses the S2 cell count formula: `cells = 6 × 4^level`.
+
 ## By KD-Tree
 
 Partition by balanced spatial partitions:
