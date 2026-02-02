@@ -690,31 +690,45 @@ def analyze_trends(baseline_files: list[str], degradation_threshold: float = 0.0
     versions = [b.get("version", "unknown") for b in baselines]
 
     # Build time series for each (file_size, operation) pair
+    # Store (baseline_index, avg_time) to track gaps
     time_series = {}
-    for baseline in baselines:
+    for baseline_idx, baseline in enumerate(baselines):
         for bench in baseline["benchmarks"]:
             if bench["avg_time"] is None or bench["avg_time"] <= 0:
                 continue
             key = (bench["file_size"], bench["operation"])
             if key not in time_series:
                 time_series[key] = []
-            time_series[key].append(bench["avg_time"])
+            time_series[key].append((baseline_idx, bench["avg_time"]))
 
     # Detect gradual degradation
     warnings = []
     consistent_improvements = []
 
-    for key, times in time_series.items():
-        if len(times) < 3:
+    for key, entries in time_series.items():
+        if len(entries) < 3:
             continue
 
         file_size, operation = key
 
-        # Calculate deltas between consecutive versions
-        deltas = [(times[i + 1] - times[i]) / times[i] for i in range(len(times) - 1)]
+        # Calculate deltas only between consecutive baseline indices
+        deltas = []
+        for i in range(len(entries) - 1):
+            idx1, time1 = entries[i]
+            idx2, time2 = entries[i + 1]
+            # Only compute delta if baselines are consecutive
+            if idx2 == idx1 + 1:
+                deltas.append((time2 - time1) / time1)
+
+        if len(deltas) < 2:
+            continue
 
         # Check for consistent degradation (last 2 deltas both exceed threshold)
-        if len(deltas) >= 2 and all(d > degradation_threshold for d in deltas[-2:]):
+        # Also verify the last 2 baselines (most recent) both have data
+        last_two_indices = [entries[-2][0], entries[-1][0]]
+        has_recent_consecutive = last_two_indices[-1] == last_two_indices[-2] + 1
+
+        if has_recent_consecutive and all(d > degradation_threshold for d in deltas[-2:]):
             avg_degradation = sum(deltas[-2:]) / 2 * 100
             warnings.append(
                 {
@@ -728,7 +742,7 @@ def analyze_trends(baseline_files: list[str], degradation_threshold: float = 0.0
             )
 
         # Check for consistent improvement
-        if len(deltas) >= 2 and all(d < -degradation_threshold for d in deltas[-2:]):
+        if has_recent_consecutive and all(d < -degradation_threshold for d in deltas[-2:]):
             avg_improvement = -sum(deltas[-2:]) / 2 * 100
             consistent_improvements.append(
                 {
@@ -739,12 +753,15 @@ def analyze_trends(baseline_files: list[str], degradation_threshold: float = 0.0
                 }
             )
 
-    # Calculate overall statistics
+    # Calculate overall statistics (only from consecutive baselines)
     all_deltas = []
-    for times in time_series.values():
-        if len(times) >= 2:
-            deltas = [(times[i + 1] - times[i]) / times[i] for i in range(len(times) - 1)]
-            all_deltas.extend(deltas)
+    for entries in time_series.values():
+        for i in range(len(entries) - 1):
+            idx1, time1 = entries[i]
+            idx2, time2 = entries[i + 1]
+            # Only include deltas from consecutive baselines
+            if idx2 == idx1 + 1:
+                all_deltas.append((time2 - time1) / time1)
 
     if all_deltas:
         avg_change = sum(all_deltas) / len(all_deltas) * 100
