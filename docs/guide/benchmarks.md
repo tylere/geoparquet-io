@@ -173,42 +173,64 @@ When benchmarks identify performance regressions, profiling helps diagnose which
 
 Add the `--profile` flag to enable cProfile integration:
 
-```bash
-# Run benchmarks with profiling enabled
-gpio benchmark suite \
-  --files path/to/file.parquet \
-  --operations core \
-  --profile \
-  --profile-dir ./profiles
+=== "CLI"
+    ```bash
+    # Run benchmarks with profiling enabled
+    gpio benchmark suite \
+      --files path/to/file.parquet \
+      --operations core \
+      --profile \
+      --profile-dir ./profiles
 
-# Profile specific operations
-gpio benchmark suite \
-  --files large.parquet \
-  --operations add-bbox,sort-hilbert \
-  --profile
-```
+    # Profile specific operations
+    gpio benchmark suite \
+      --files large.parquet \
+      --operations add-bbox,sort-hilbert \
+      --profile
+    ```
+
+=== "Python"
+    ```python
+    from geoparquet_io.core.benchmark_suite import run_benchmark_suite
+    from pathlib import Path
+
+    # Run benchmarks with profiling enabled
+    result = run_benchmark_suite(
+        input_files=[Path('path/to/file.parquet')],
+        operations=['add-bbox', 'extract', 'inspect'],
+        iterations=3,
+        profile=True,
+        profile_dir=Path('./profiles'),
+        verbose=True
+    )
+
+    # Profile files are saved in ./profiles/
+    print(f"Generated {len(result.results)} benchmark results")
+    ```
 
 This generates `.prof` files in the specified directory (default: `./profiles/`).
 
 ### Analyzing Profile Data
 
 **View profile interactively:**
-```bash
-uv run python -m pstats profiles/add-bbox_large_1.prof
-# Then use commands like:
-# - stats 20  (show top 20 functions)
-# - sort cumtime  (sort by cumulative time)
-# - callers duckdb  (show callers of duckdb functions)
-```
 
-**Generate text summary:**
-```python
-from geoparquet_io.benchmarks.profile_report import format_profile_stats
+=== "CLI"
+    ```bash
+    uv run python -m pstats profiles/add-bbox_large_1.prof
+    # Then use commands like:
+    # - stats 20  (show top 20 functions)
+    # - sort cumtime  (sort by cumulative time)
+    # - callers duckdb  (show callers of duckdb functions)
+    ```
 
-# Show top 20 slowest functions
-summary = format_profile_stats('profiles/add-bbox_large_1.prof', top_n=20)
-print(summary)
-```
+=== "Python"
+    ```python
+    from geoparquet_io.benchmarks.profile_report import format_profile_stats
+
+    # Show top 20 slowest functions
+    summary = format_profile_stats('profiles/add-bbox_large_1.prof', top_n=20)
+    print(summary)
+    ```
 
 **Sample profile output:**
 ```
