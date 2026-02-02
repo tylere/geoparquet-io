@@ -184,6 +184,81 @@ def _calculate_quadkey_resolution(
     return resolution
 
 
+def _calculate_a5_resolution(
+    total_rows: int,
+    target_rows_per_partition: int,
+    max_partitions: int = 10000,
+    min_resolution: int = 0,
+    max_resolution: int = 30,
+    verbose: bool = False,
+) -> int:
+    """
+    Calculate optimal A5 (S2) resolution for target partition size.
+
+    A5/S2 indexing system:
+    - Resolution 0: 6 base cells (one per cube face)
+    - Each resolution level quadruples the number of cells (2x2 subdivision)
+    - Resolution 30: maximum resolution (~1cm cells)
+
+    Strategy:
+    - Calculate target partition count from total_rows / target_rows
+    - Use geometric progression to estimate resolution
+    - Clamp to reasonable bounds
+
+    Args:
+        total_rows: Total number of rows in dataset
+        target_rows_per_partition: Desired rows per partition
+        max_partitions: Maximum allowed partitions
+        min_resolution: Minimum A5 resolution (default 0)
+        max_resolution: Maximum A5 resolution (default 30)
+        verbose: Print debug messages
+
+    Returns:
+        Optimal A5 resolution (0-30)
+    """
+    if total_rows == 0:
+        return min_resolution
+
+    # Calculate target partition count
+    target_partitions = total_rows / target_rows_per_partition
+
+    # Respect max_partitions constraint
+    if target_partitions > max_partitions:
+        if verbose:
+            warn(
+                f"Target partition count ({target_partitions:.0f}) exceeds max ({max_partitions}), "
+                f"adjusting target to {max_partitions}"
+            )
+        target_partitions = max_partitions
+
+    # A5/S2 has 6 base cells at resolution 0
+    # Each resolution level multiplies by 4 (quadtree subdivision)
+    # Formula: cells(res) = 6 × 4^res
+    #
+    # Solving for res: target_partitions = 6 × 4^res
+    # res = log(target_partitions / 6) / log(4) = log2(target_partitions / 6) / 2
+
+    if target_partitions < 6:
+        # Very few partitions needed, use resolution 0
+        estimated_resolution = 0
+    else:
+        estimated_resolution = math.log2(target_partitions / 6) / 2
+        estimated_resolution = round(estimated_resolution)
+
+    # Clamp to valid range
+    resolution = max(min_resolution, min(estimated_resolution, max_resolution))
+
+    if verbose:
+        estimated_partitions = 6 * (4**resolution)
+        estimated_rows_per_partition = total_rows / estimated_partitions
+        info(
+            f"A5 auto-resolution: {resolution} "
+            f"(~{estimated_partitions:.0f} partitions, ~{estimated_rows_per_partition:.0f} rows/partition)"
+        )
+
+    return resolution
+
+
 def calculate_auto_resolution(
     input_parquet: str,
     spatial_index_type: str,
@@ -201,7 +276,7 @@ def calculate_auto_resolution(
 
     Args:
         input_parquet: Input file path
-        spatial_index_type: Type of spatial index ('h3', 'quadkey')
+        spatial_index_type: Type of spatial index ('h3', 'quadkey', 'a5')
         target_rows_per_partition: Desired rows per partition
         max_partitions: Maximum allowed partitions (default 10000)
         min_resolution: Minimum resolution (None = use index default)
@@ -257,9 +332,15 @@ def calculate_auto_resolution(
         default_max = 23
         calc_func = _calculate_quadkey_resolution
 
+    elif spatial_index_type == "a5":
+        # A5/S2 resolution range: 0-30
+        default_min = 0
+        default_max = 30
+        calc_func = _calculate_a5_resolution
+
     else:
         raise ValueError(
-            f"Unsupported spatial index type: {spatial_index_type}. Supported types: h3, quadkey"
+            f"Unsupported spatial index type: {spatial_index_type}. Supported types: h3, quadkey, a5"
         )
 
     # Use defaults if not specified

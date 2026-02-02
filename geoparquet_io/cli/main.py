@@ -3797,8 +3797,25 @@ def partition_h3(
 @click.option(
     "--resolution",
     type=click.IntRange(0, 30),
-    default=15,
-    help="A5 resolution for partitioning (0-30, default: 15)",
+    default=None,
+    help="A5 resolution for partitioning (0-30). Required unless --auto is used.",
+)
+@click.option(
+    "--auto",
+    is_flag=True,
+    help="Automatically calculate optimal resolution based on data size",
+)
+@click.option(
+    "--target-rows",
+    type=int,
+    default=100000,
+    help="Target rows per partition when using --auto (default: 100000)",
+)
+@click.option(
+    "--max-partitions",
+    type=int,
+    default=10000,
+    help="Maximum partitions when using --auto (default: 10000)",
 )
 @click.option(
     "--keep-a5-column",
@@ -3815,6 +3832,9 @@ def partition_a5(
     output_folder,
     a5_name,
     resolution,
+    auto,
+    target_rows,
+    max_partitions,
     keep_a5_column,
     hive,
     overwrite,
@@ -3843,22 +3863,29 @@ def partition_a5(
 
     Use --preview to see what partitions would be created without actually creating files.
 
+    Auto-resolution mode: Use --auto to automatically calculate the optimal A5 resolution
+    based on your target partition size. Specify --target-rows (default: 100K) to control
+    partition granularity.
+
     Examples:
+
+        # Auto-calculate optimal resolution for ~100K rows per partition
+        gpio partition a5 input.parquet output/ --auto
+
+        # Auto with custom target size (fewer, larger partitions)
+        gpio partition a5 input.parquet output/ --auto --target-rows 500000
 
         # Preview partitions at resolution 10 (~41km² cells)
         gpio partition a5 input.parquet --resolution 10 --preview
 
-        # Partition by A5 cells at default resolution 15 (A5 column excluded from output)
-        gpio partition a5 input.parquet output/
+        # Partition by A5 cells at resolution 15
+        gpio partition a5 input.parquet output/ --resolution 15
 
         # Partition with A5 column kept in output files
-        gpio partition a5 input.parquet output/ --keep-a5-column
+        gpio partition a5 input.parquet output/ --resolution 12 --keep-a5-column
 
-        # Partition with custom A5 column name
-        gpio partition a5 input.parquet output/ --a5-name my_a5
-
-        # Use Hive-style partitioning at resolution 12 (A5 column included by default)
-        gpio partition a5 input.parquet output/ --resolution 12 --hive
+        # Use Hive-style partitioning (A5 column included by default)
+        gpio partition a5 input.parquet output/ --auto --hive
     """
     # If preview mode, output_folder is not required
     if not preview and not output_folder:
@@ -3891,6 +3918,9 @@ def partition_a5(
         row_group_size_mb=row_group_mb,
         row_group_rows=row_group_size,
         memory_limit=write_memory,
+        auto=auto,
+        target_rows=target_rows,
+        max_partitions=max_partitions,
     )
 
 
