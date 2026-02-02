@@ -128,6 +128,49 @@ gpio add h3 input.parquet output.parquet --resolution 13
 gpio add h3 input.parquet output.parquet --row-group-size-mb 256MB
 ```
 
+## S2 Spherical Cells
+
+Add [S2](https://s2geometry.io/) spherical cell IDs based on geometry centroids:
+
+=== "CLI"
+
+    ```bash
+    gpio add s2 input.parquet output.parquet --level 13
+
+    # From HTTPS to S3
+    gpio add s2 https://example.com/data.parquet s3://bucket/indexed.parquet --level 13
+    ```
+
+=== "Python"
+
+    ```python
+    import geoparquet_io as gpio
+
+    gpio.read('input.parquet').add_s2(level=13).write('output.parquet')
+
+    # Custom column name
+    gpio.read('input.parquet').add_s2(column_name='s2_index', level=18).write('output.parquet')
+    ```
+
+S2 uses Google's Spherical Geometry library which divides the Earth's surface into a hierarchy of cells using quadtree subdivision. Unlike H3's hexagonal grid, S2 cells are variable quads that provide hierarchical spatial indexing.
+
+**Level guide:**
+
+--8<-- "_includes/s2-levels.md"
+
+**Options:**
+
+```bash
+# Custom column name
+gpio add s2 input.parquet output.parquet --s2-name s2_index
+
+# Different level
+gpio add s2 input.parquet output.parquet --level 18
+
+# With row group sizing
+gpio add s2 input.parquet output.parquet --row-group-size-mb 256MB
+```
+
 ## KD-Tree Partitions
 
 Add balanced spatial partition IDs using KD-tree:

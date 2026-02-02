@@ -1,0 +1,5 @@
+- Level 8: ~1,250 km² cells (regional)
+- Level 10: ~78 km² cells (city-scale)
+- Level 13: ~1.2 km² cells (default, neighborhood)
+- Level 15: ~77,000 m² cells (block-level)
+- Level 18: ~1,200 m² cells (building-level)

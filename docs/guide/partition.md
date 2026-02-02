@@ -98,6 +98,53 @@ Partition by H3 hexagonal cells:
 
 If H3 column doesn't exist, it's automatically added.
 
+## By S2 Cells
+
+Partition by S2 spherical cells:
+
+=== "CLI"
+
+    ```bash
+    # Preview at level 10 (~78 km² cells)
+    gpio partition s2 input.parquet --level 10 --preview
+
+    # Partition at default level 13
+    gpio partition s2 input.parquet output/
+
+    # Keep S2 column in output files
+    gpio partition s2 input.parquet output/ --keep-s2-column
+
+    # Hive-style (S2 column included by default)
+    gpio partition s2 input.parquet output/ --level 10 --hive
+    ```
+
+=== "Python"
+
+    ```python
+    import geoparquet_io as gpio
+
+    # Partition by S2 (Hive-style by default)
+    gpio.read('input.parquet').partition_by_s2('output/')
+
+    # Custom level
+    gpio.read('input.parquet').partition_by_s2('output/', level=10)
+
+    # With options
+    gpio.read('input.parquet').partition_by_s2(
+        'output/',
+        level=10,
+        compression='ZSTD',
+        overwrite=True
+    )
+    ```
+
+**Column behavior:**
+- Non-Hive: S2 column excluded by default (redundant with path)
+- Hive: S2 column included by default
+- Use `--keep-s2-column` to explicitly keep
+
+If S2 column doesn't exist, it's automatically added.
+
 ## By KD-Tree
 
 Partition by balanced spatial partitions:
