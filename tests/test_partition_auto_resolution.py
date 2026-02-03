@@ -242,6 +242,86 @@ class TestA5ResolutionCalculation:
         assert resolution == 0
 
 
+class TestS2ResolutionCalculation:
+    """Test S2 auto-resolution calculation logic."""
+
+    def test_calculate_s2_resolution_small_dataset(self):
+        """Small dataset should use low level."""
+        # 10K rows, want ~1K per partition = ~10 partitions
+        # S2 has 6 base cells, so level 0 should be fine
+        resolution = _calculate_a5_resolution(
+            total_rows=10000, target_rows_per_partition=1000, verbose=False, index_name="S2"
+        )
+        assert 0 <= resolution <= 2  # Should be very low resolution
+
+    def test_calculate_s2_resolution_medium_dataset(self):
+        """Medium dataset should use medium level."""
+        # 1M rows, want ~100K per partition = ~10 partitions
+        # 6 * 4^level = 10 → level ≈ 0.36 (round to 0)
+        resolution = _calculate_a5_resolution(
+            total_rows=1000000, target_rows_per_partition=100000, verbose=False, index_name="S2"
+        )
+        assert 0 <= resolution <= 2
+
+    def test_calculate_s2_resolution_large_dataset(self):
+        """Large dataset should use higher level."""
+        # 100M rows, want ~100K per partition = ~1000 partitions
+        # 6 * 4^level = 1000 → level = log(1000/6) / log(4) ≈ 3.7
+        resolution = _calculate_a5_resolution(
+            total_rows=100000000, target_rows_per_partition=100000, verbose=False, index_name="S2"
+        )
+        assert 3 <= resolution <= 5
+
+    def test_calculate_s2_resolution_very_large_dataset(self):
+        """Very large dataset should use higher level."""
+        # 1B rows, want ~10K per partition = ~100K partitions
+        # 6 * 4^level = 100K → level = log(100K/6) / log(4) ≈ 7.4
+        resolution = _calculate_a5_resolution(
+            total_rows=1000000000, target_rows_per_partition=10000, verbose=False, index_name="S2"
+        )
+        assert 5 <= resolution <= 9
+
+    def test_calculate_s2_resolution_respects_max_partitions(self):
+        """Should not exceed max_partitions constraint."""
+        resolution = _calculate_a5_resolution(
+            total_rows=1000000,
+            target_rows_per_partition=10,  # Would create 100K partitions
+            max_partitions=1000,  # But limit to 1K
+            verbose=False,
+            index_name="S2",
+        )
+        # 6 * 4^level = 1000 → level = log(1000/6) / log(4) ≈ 3.7
+        assert resolution <= 5
+
+    def test_calculate_s2_resolution_respects_bounds(self):
+        """Should respect min/max level bounds."""
+        resolution = _calculate_a5_resolution(
+            total_rows=1000000000,
+            target_rows_per_partition=1,
+            min_resolution=0,
+            max_resolution=15,  # Cap at 15
+            verbose=False,
+            index_name="S2",
+        )
+        assert resolution <= 15
+
+        resolution = _calculate_a5_resolution(
+            total_rows=100,
+            target_rows_per_partition=100,
+            min_resolution=5,
+            max_resolution=30,
+            index_name="S2",
+        )
+        assert resolution >= 5
+
+    def test_calculate_s2_resolution_zero_rows(self):
+        """Zero rows should return min level."""
+        resolution = _calculate_a5_resolution(
+            total_rows=0, target_rows_per_partition=100, verbose=False, index_name="S2"
+        )
+        assert resolution == 0
+
+
 class TestAutoResolutionIntegration:
     """Test the main calculate_auto_resolution function with real files."""
 
@@ -279,6 +359,18 @@ class TestAutoResolutionIntegration:
             verbose=False,
         )
         # Should return a valid A5 resolution
+        assert 0 <= resolution <= 30
+
+    def test_calculate_auto_resolution_s2_with_real_file(self, fields_5070_file):
+        """Test auto-resolution calculation with a real GeoParquet file (S2)."""
+        resolution = calculate_auto_resolution(
+            input_parquet=fields_5070_file,
+            spatial_index_type="s2",
+            target_rows_per_partition=50,
+            max_partitions=100,
+            verbose=False,
+        )
+        # Should return a valid S2 level
         assert 0 <= resolution <= 30
 
     def test_calculate_auto_resolution_invalid_type(self, fields_5070_file):

@@ -109,60 +109,6 @@ def _run_preview(input_parquet, s2_column_name, preview_limit, verbose):
     )
 
 
-def _calculate_s2_level_for_target(
-    input_parquet: str,
-    target_rows_per_partition: int,
-    verbose: bool = False,
-) -> int:
-    """Calculate optimal S2 level for target rows per partition.
-
-    S2 cells follow: total_cells(level) = 6 × 4^level
-
-    Args:
-        input_parquet: Input file path
-        target_rows_per_partition: Target rows per partition
-        verbose: Enable verbose logging
-
-    Returns:
-        int: Recommended S2 level (0-30)
-    """
-    import math
-
-    from geoparquet_io.core.duckdb_metadata import get_row_count
-
-    total_rows = get_row_count(input_parquet)
-
-    if verbose:
-        debug(f"Total rows: {total_rows:,}")
-        debug(f"Target rows per partition: {target_rows_per_partition:,}")
-
-    # Calculate desired number of partitions
-    desired_partitions = max(1, total_rows / target_rows_per_partition)
-
-    # S2 formula: partitions = 6 × 4^level
-    # Solve for level: level = log(partitions / 6) / log(4)
-    if desired_partitions <= 6:
-        level = 0
-    else:
-        level = math.log(desired_partitions / 6) / math.log(4)
-        level = round(level)  # Round to nearest integer
-
-    # Clamp to valid range
-    level = max(0, min(30, level))
-
-    actual_partitions = 6 * (4**level)
-    actual_rows_per_partition = (
-        total_rows / actual_partitions if actual_partitions > 0 else total_rows
-    )
-
-    if verbose:
-        debug(f"Calculated S2 level: {level}")
-        debug(f"Expected partitions: ~{actual_partitions:,}")
-        debug(f"Expected rows/partition: ~{actual_rows_per_partition:,.0f}")
-
-    return level
-
-
 def _partition_with_temp_file(
     working_parquet: str,
     temp_file: str | None,

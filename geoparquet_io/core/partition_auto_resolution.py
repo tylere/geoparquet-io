@@ -200,9 +200,10 @@ def _calculate_a5_resolution(
     min_resolution: int = 0,
     max_resolution: int = 30,
     verbose: bool = False,
+    index_name: str = "A5",
 ) -> int:
     """
-    Calculate optimal A5 (S2) resolution for target partition size.
+    Calculate optimal A5 (or S2) resolution for target partition size.
 
     A5/S2 indexing system:
     - Resolution 0: 6 base cells (one per cube face)
@@ -218,12 +219,13 @@ def _calculate_a5_resolution(
         total_rows: Total number of rows in dataset
         target_rows_per_partition: Desired rows per partition
         max_partitions: Maximum allowed partitions
-        min_resolution: Minimum A5 resolution (default 0)
-        max_resolution: Maximum A5 resolution (default 30)
+        min_resolution: Minimum A5/S2 resolution (default 0)
+        max_resolution: Maximum A5/S2 resolution (default 30)
         verbose: Print debug messages
+        index_name: Name of index for logging (default 'A5')
 
     Returns:
-        Optimal A5 resolution (0-30)
+        Optimal A5/S2 resolution (0-30)
     """
     if total_rows == 0:
         return min_resolution
@@ -261,7 +263,7 @@ def _calculate_a5_resolution(
         estimated_partitions = 6 * (4**resolution)
         estimated_rows_per_partition = total_rows / estimated_partitions
         info(
-            f"A5 auto-resolution: {resolution} "
+            f"{index_name} auto-resolution: {resolution} "
             f"(~{estimated_partitions:.0f} partitions, ~{estimated_rows_per_partition:.0f} rows/partition)"
         )
 
@@ -286,7 +288,7 @@ def calculate_auto_resolution(
 
     Args:
         input_parquet: Input file path
-        spatial_index_type: Type of spatial index ('h3', 'quadkey', 'a5')
+        spatial_index_type: Type of spatial index ('h3', 'quadkey', 'a5', 's2')
         target_rows_per_partition: Desired rows per partition
         max_partitions: Maximum allowed partitions (default 10000)
         min_resolution: Minimum resolution (None = use index default)
@@ -345,22 +347,32 @@ def calculate_auto_resolution(
         default_min = 0
         default_max = 15
         calc_func = _calculate_h3_resolution
+        index_name = None  # Use default in function
 
     elif spatial_index_type == "quadkey":
         # Quadkey zoom level range: 0-23
         default_min = 0
         default_max = 23
         calc_func = _calculate_quadkey_resolution
+        index_name = None  # Use default in function
 
     elif spatial_index_type == "a5":
-        # A5/S2 resolution range: 0-30
+        # A5 resolution range: 0-30
         default_min = 0
         default_max = 30
         calc_func = _calculate_a5_resolution
+        index_name = "A5"
+
+    elif spatial_index_type == "s2":
+        # S2 level range: 0-30 (same as A5)
+        default_min = 0
+        default_max = 30
+        calc_func = _calculate_a5_resolution
+        index_name = "S2"
 
     else:
         raise ValueError(
-            f"Unsupported spatial index type: {spatial_index_type}. Supported types: h3, quadkey, a5"
+            f"Unsupported spatial index type: {spatial_index_type}. Supported types: h3, quadkey, a5, s2"
         )
 
     # Use defaults if not specified
@@ -370,13 +382,25 @@ def calculate_auto_resolution(
         max_resolution = default_max
 
     # Calculate optimal resolution
-    resolution = calc_func(
-        total_rows=total_rows,
-        target_rows_per_partition=target_rows_per_partition,
-        max_partitions=max_partitions,
-        min_resolution=min_resolution,
-        max_resolution=max_resolution,
-        verbose=verbose,
-    )
+    # For A5/S2, pass index_name parameter
+    if spatial_index_type in ("a5", "s2"):
+        resolution = calc_func(
+            total_rows=total_rows,
+            target_rows_per_partition=target_rows_per_partition,
+            max_partitions=max_partitions,
+            min_resolution=min_resolution,
+            max_resolution=max_resolution,
+            verbose=verbose,
+            index_name=index_name,
+        )
+    else:
+        resolution = calc_func(
+            total_rows=total_rows,
+            target_rows_per_partition=target_rows_per_partition,
+            max_partitions=max_partitions,
+            min_resolution=min_resolution,
+            max_resolution=max_resolution,
+            verbose=verbose,
+        )
 
     return resolution

@@ -3977,9 +3977,14 @@ def partition_s2(
 
     # Calculate level in auto mode
     if auto:
-        from geoparquet_io.core.partition_by_s2 import _calculate_s2_level_for_target
+        from geoparquet_io.core.partition_auto_resolution import calculate_auto_resolution
 
-        level = _calculate_s2_level_for_target(input_parquet, target_rows, verbose)
+        level = calculate_auto_resolution(
+            input_parquet=input_parquet,
+            spatial_index_type="s2",
+            target_rows_per_partition=target_rows,
+            verbose=verbose,
+        )
         if verbose:
             click.echo(f"Auto-selected S2 level: {level}", err=True)
 
