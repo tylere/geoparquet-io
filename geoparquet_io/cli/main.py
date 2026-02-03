@@ -3812,6 +3812,8 @@ def partition_h3(
     preview_limit,
     force,
     skip_analysis,
+    min_size,
+    in_place,
     prefix,
     compression,
     compression_level,
@@ -3856,7 +3858,51 @@ def partition_h3(
 
         # Use Hive-style partitioning at resolution 8 (H3 column included by default)
         gpio partition h3 input.parquet output/ --resolution 8 --hive
+
+        # Sub-partition all files over 100MB in a directory
+        gpio partition h3 /data/partitions/ --min-size 100MB --resolution 4 --in-place
     """
+    import os
+
+    # Handle directory input with --min-size
+    if os.path.isdir(input_parquet):
+        if not min_size:
+            raise click.UsageError(
+                "Directory input requires --min-size to specify which files to process"
+            )
+
+        from geoparquet_io.core.common import parse_size_string
+        from geoparquet_io.core.logging_config import warn
+        from geoparquet_io.core.sub_partition import sub_partition_directory
+
+        min_size_bytes = parse_size_string(min_size)
+
+        result = sub_partition_directory(
+            directory=input_parquet,
+            partition_type="h3",
+            min_size_bytes=min_size_bytes,
+            resolution=resolution,
+            in_place=in_place,
+            hive=hive,
+            overwrite=overwrite,
+            verbose=verbose,
+            force=force,
+            skip_analysis=skip_analysis,
+            compression=compression.upper() if compression else "ZSTD",
+            compression_level=compression_level or 15,
+            auto=auto,
+            target_rows=target_rows,
+            max_partitions=max_partitions,
+        )
+
+        if result["errors"]:
+            for err in result["errors"]:
+                warn(f"Error processing {err['file']}: {err['error']}")
+
+        return
+
+    # Existing single-file logic continues below...
+
     # If preview mode, output_folder is not required
     if not preview and not output_folder:
         raise click.UsageError("OUTPUT_FOLDER is required unless using --preview")

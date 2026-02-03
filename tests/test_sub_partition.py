@@ -162,3 +162,52 @@ class TestSubPartitionExecution:
         # File should still exist
         assert os.path.exists(small_path)
         assert result["processed"] == 0
+
+
+class TestSubPartitionCLI:
+    """Test CLI integration for sub-partitioning."""
+
+    def test_partition_h3_with_directory_and_min_size(self, cli_runner, temp_partition_dir):
+        """Test gpio partition h3 with directory input and --min-size."""
+        from pathlib import Path
+
+        # Copy the buildings test file to our temp directory
+        buildings_file = Path(__file__).parent / "data" / "buildings_test.parquet"
+        test_file = os.path.join(temp_partition_dir, "test.parquet")
+        shutil.copy(buildings_file, test_file)
+
+        file_size = os.path.getsize(test_file)
+
+        # Run with --min-size just below file size (use B suffix for bytes)
+        # Use --force to bypass small partition warnings (test file only has 42 rows)
+        result = cli_runner.invoke(
+            partition,
+            [
+                "h3",
+                temp_partition_dir,
+                "--min-size",
+                f"{file_size - 100}B",
+                "--resolution",
+                "4",
+                "--in-place",
+                "--force",
+            ],
+        )
+
+        assert result.exit_code == 0, f"Failed: {result.output}"
+
+        # Original should be gone
+        assert not os.path.exists(test_file)
+
+        # Sub-partition dir should exist
+        subdir = os.path.join(temp_partition_dir, "test_h3")
+        assert os.path.isdir(subdir)
+
+    def test_partition_h3_directory_requires_min_size(self, cli_runner, temp_partition_dir):
+        """Test that directory input without --min-size gives error."""
+        result = cli_runner.invoke(
+            partition,
+            ["h3", temp_partition_dir, "--resolution", "4"],
+        )
+        assert result.exit_code != 0
+        assert "min-size" in result.output.lower() or "directory" in result.output.lower()
