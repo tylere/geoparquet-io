@@ -529,13 +529,17 @@ class TestVerboseOutput:
         """Set up logging for caplog to work."""
         logger = get_logger()
         original_propagate = logger.propagate
+        original_level = logger.level
+        original_handlers = logger.handlers.copy()
         logger.setLevel(logging.DEBUG)
         logger.handlers.clear()
         logger.propagate = True  # Enable propagation for caplog to work
         yield
-        # Clean up
+        # Clean up - restore original state
         logger.handlers.clear()
+        logger.handlers.extend(original_handlers)
         logger.propagate = original_propagate
+        logger.setLevel(original_level)
 
     def test_s2_verbose_output_uses_s2_name(self, caplog):
         """Verbose output should show 'S2' for S2 index type."""
