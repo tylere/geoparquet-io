@@ -98,3 +98,67 @@ class TestSubPartitionCore:
 
         assert len(result) == 1
         assert result[0] == nested_path
+
+
+class TestSubPartitionExecution:
+    """Test sub_partition_directory function."""
+
+    def test_sub_partition_creates_subdirectories(self, temp_partition_dir):
+        """Test that sub_partition_directory creates sub-partitions for large files."""
+        from pathlib import Path
+
+        from geoparquet_io.core.sub_partition import sub_partition_directory
+
+        # Copy the buildings test file to our temp directory
+        buildings_file = Path(__file__).parent / "data" / "buildings_test.parquet"
+        large_path = os.path.join(temp_partition_dir, "large.parquet")
+        shutil.copy(buildings_file, large_path)
+
+        # Get file size and use threshold just below it
+        file_size = os.path.getsize(large_path)
+        threshold = file_size - 100
+
+        result = sub_partition_directory(
+            directory=temp_partition_dir,
+            partition_type="h3",
+            min_size_bytes=threshold,
+            resolution=4,
+            in_place=True,
+            verbose=False,
+        )
+
+        # Original file should be gone
+        assert not os.path.exists(large_path)
+
+        # Sub-partition directory should exist
+        subdir = os.path.join(temp_partition_dir, "large_h3")
+        assert os.path.isdir(subdir)
+
+        # Should have some partition files
+        partition_files = list(Path(subdir).glob("*.parquet"))
+        assert len(partition_files) > 0
+
+        assert result["processed"] == 1
+        assert result["skipped"] == 0
+
+    def test_sub_partition_skips_small_files(self, temp_partition_dir):
+        """Test that sub_partition_directory skips files below threshold."""
+        from geoparquet_io.core.sub_partition import sub_partition_directory
+
+        # Create small file
+        data = pa.table({"id": [1], "geometry": [b"POINT(0 0)"]})
+        small_path = os.path.join(temp_partition_dir, "small.parquet")
+        pq.write_table(data, small_path)
+
+        result = sub_partition_directory(
+            directory=temp_partition_dir,
+            partition_type="h3",
+            min_size_bytes=1000000000,  # 1GB - way bigger than file
+            resolution=4,
+            in_place=True,
+            verbose=False,
+        )
+
+        # File should still exist
+        assert os.path.exists(small_path)
+        assert result["processed"] == 0
