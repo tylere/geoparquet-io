@@ -4,6 +4,54 @@ The `partition` commands split GeoParquet files into separate files based on col
 
 **Smart Analysis**: All partition commands automatically analyze your strategy before execution, providing statistics and recommendations.
 
+## Auto-Resolution Mode
+
+All spatial partitioning commands (H3, S2, A5, Quadkey) support **automatic resolution calculation** using the `--auto` flag. This eliminates the need to manually specify resolution levels by calculating the optimal value based on your data.
+
+### How It Works
+
+Auto-resolution analyzes your dataset and calculates the optimal spatial index resolution to achieve your target partition size:
+
+1. Counts total rows in your input file
+2. Calculates how many partitions are needed to achieve `--target-rows` per partition
+3. Selects the resolution that produces approximately that many partitions
+4. Respects `--max-partitions` as an upper bound
+
+### Common Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--auto` | off | Enable auto-resolution calculation |
+| `--target-rows` | 100,000 | Target rows per partition |
+| `--max-partitions` | 10,000 | Maximum partitions to create |
+
+### Quick Examples
+
+```bash
+# H3 with ~100K rows per partition (default)
+gpio partition h3 input.parquet output/ --auto
+
+# S2 with ~50K rows per partition
+gpio partition s2 input.parquet output/ --auto --target-rows 50000
+
+# Quadkey with partition limit
+gpio partition quadkey input.parquet output/ --auto --max-partitions 1000
+
+# A5 with preview
+gpio partition a5 input.parquet --auto --preview
+```
+
+### Resolution Formulas
+
+The auto-resolution calculation uses these cell count formulas:
+
+| Index | Formula | Notes |
+|-------|---------|-------|
+| **H3** | `cells ≈ 122 × 7^resolution` | Hexagonal cells |
+| **S2** | `cells = 6 × 4^level` | Spherical cells |
+| **A5** | `cells = 6 × 4^resolution` | S2-based |
+| **Quadkey** | `tiles = 4^zoom` | Square tiles |
+
 ## By String Column
 
 Partition by string column values or prefixes:
@@ -58,14 +106,20 @@ Partition by H3 hexagonal cells:
 === "CLI"
 
     ```bash
+    # Auto-calculate optimal resolution for ~100K rows per partition
+    gpio partition h3 input.parquet output/ --auto
+
+    # Auto with custom target partition size
+    gpio partition h3 input.parquet output/ --auto --target-rows 50000
+
     # Preview at resolution 7 (~5km² cells)
     gpio partition h3 input.parquet --resolution 7 --preview
 
-    # Partition at default resolution 9
-    gpio partition h3 input.parquet output/
+    # Partition at specific resolution 9
+    gpio partition h3 input.parquet output/ --resolution 9
 
     # Keep H3 column in output files
-    gpio partition h3 input.parquet output/ --keep-h3-column
+    gpio partition h3 input.parquet output/ --resolution 9 --keep-h3-column
 
     # Hive-style (H3 column included by default)
     gpio partition h3 input.parquet output/ --resolution 8 --hive
@@ -92,11 +146,40 @@ Partition by H3 hexagonal cells:
     ```
 
 **Column behavior:**
+
 - Non-Hive: H3 column excluded by default (redundant with path)
 - Hive: H3 column included by default
 - Use `--keep-h3-column` to explicitly keep
 
 If H3 column doesn't exist, it's automatically added.
+
+### Auto-Resolution for H3
+
+Use `--auto` to let gpio calculate the optimal H3 resolution:
+
+=== "CLI"
+
+    ```bash
+    # Auto-select resolution for ~100k rows per partition (default)
+    gpio partition h3 input.parquet output/ --auto
+
+    # Target 50k rows per partition
+    gpio partition h3 input.parquet output/ --auto --target-rows 50000
+
+    # Limit maximum partitions created
+    gpio partition h3 input.parquet output/ --auto --max-partitions 5000
+
+    # Preview auto-selected partitions
+    gpio partition h3 input.parquet --auto --preview
+    ```
+
+=== "Python"
+
+    ```python
+    # Not yet implemented in Python API
+    ```
+
+Auto-resolution calculates the optimal H3 resolution using the formula: `cells ≈ 122 × 7^resolution`. The algorithm targets your specified rows per partition while respecting the `--max-partitions` constraint.
 
 ## By S2 Cells
 
@@ -105,17 +188,23 @@ Partition by S2 spherical cells:
 === "CLI"
 
     ```bash
+    # Auto-calculate optimal level for ~100K rows per partition
+    gpio partition s2 input.parquet output/ --auto
+
+    # Auto with custom target partition size
+    gpio partition s2 input.parquet output/ --auto --target-rows 500000
+
     # Preview at level 10 (~78 km² cells)
     gpio partition s2 input.parquet --level 10 --preview
 
-    # Partition at default level 13
-    gpio partition s2 input.parquet output/
+    # Partition at specific level 13 (~1.2km² cells)
+    gpio partition s2 input.parquet output/ --level 13
 
     # Keep S2 column in output files
-    gpio partition s2 input.parquet output/ --keep-s2-column
+    gpio partition s2 input.parquet output/ --level 12 --keep-s2-column
 
     # Hive-style (S2 column included by default)
-    gpio partition s2 input.parquet output/ --level 10 --hive
+    gpio partition s2 input.parquet output/ --auto --hive
     ```
 
 === "Python"
@@ -139,15 +228,16 @@ Partition by S2 spherical cells:
     ```
 
 **Column behavior:**
+
 - Non-Hive: S2 column excluded by default (redundant with path)
 - Hive: S2 column included by default
 - Use `--keep-s2-column` to explicitly keep
 
 If S2 column doesn't exist, it's automatically added.
 
-### Auto-Resolution
+### Auto-Resolution for S2
 
-Let gpio automatically select the optimal S2 level:
+Use `--auto` to let gpio calculate the optimal S2 level:
 
 === "CLI"
 
@@ -157,6 +247,9 @@ Let gpio automatically select the optimal S2 level:
 
     # Target 50k rows per partition
     gpio partition s2 input.parquet output/ --auto --target-rows 50000
+
+    # Limit maximum partitions created
+    gpio partition s2 input.parquet output/ --auto --max-partitions 5000
 
     # Preview auto-selected partitions
     gpio partition s2 input.parquet --auto --preview
@@ -168,7 +261,171 @@ Let gpio automatically select the optimal S2 level:
     # Not yet implemented in Python API
     ```
 
-Auto-resolution calculates the optimal S2 level based on your dataset size and target rows per partition. The calculation uses the S2 cell count formula: `cells = 6 × 4^level`.
+Auto-resolution calculates the optimal S2 level using the formula: `cells = 6 × 4^level`. The algorithm targets your specified rows per partition while respecting the `--max-partitions` constraint.
+
+## By A5 Cells
+
+Partition by A5 (S2-based) spatial cells:
+
+=== "CLI"
+
+    ```bash
+    # Auto-calculate optimal resolution for ~100K rows per partition
+    gpio partition a5 input.parquet output/ --auto
+
+    # Auto with custom target partition size
+    gpio partition a5 input.parquet output/ --auto --target-rows 500000
+
+    # Preview at resolution 10 (~41km² cells)
+    gpio partition a5 input.parquet --resolution 10 --preview
+
+    # Partition at specific resolution 15
+    gpio partition a5 input.parquet output/ --resolution 15
+
+    # Keep A5 column in output files
+    gpio partition a5 input.parquet output/ --resolution 12 --keep-a5-column
+
+    # Hive-style (A5 column included by default)
+    gpio partition a5 input.parquet output/ --auto --hive
+    ```
+
+=== "Python"
+
+    ```python
+    import geoparquet_io as gpio
+
+    # Partition by A5 (Hive-style by default)
+    gpio.read('input.parquet').partition_by_a5('output/')
+
+    # Custom resolution
+    gpio.read('input.parquet').partition_by_a5('output/', resolution=10)
+
+    # With options
+    gpio.read('input.parquet').partition_by_a5(
+        'output/',
+        resolution=12,
+        compression='ZSTD',
+        overwrite=True
+    )
+    ```
+
+**Column behavior:**
+
+- Non-Hive: A5 column excluded by default (redundant with path)
+- Hive: A5 column included by default
+- Use `--keep-a5-column` to explicitly keep
+
+If A5 column doesn't exist, it's automatically added.
+
+### Auto-Resolution for A5
+
+Use `--auto` to let gpio calculate the optimal A5 resolution:
+
+=== "CLI"
+
+    ```bash
+    # Auto-select resolution for ~100k rows per partition (default)
+    gpio partition a5 input.parquet output/ --auto
+
+    # Target 50k rows per partition
+    gpio partition a5 input.parquet output/ --auto --target-rows 50000
+
+    # Limit maximum partitions created
+    gpio partition a5 input.parquet output/ --auto --max-partitions 5000
+
+    # Preview auto-selected partitions
+    gpio partition a5 input.parquet --auto --preview
+    ```
+
+=== "Python"
+
+    ```python
+    # Not yet implemented in Python API
+    ```
+
+Auto-resolution calculates the optimal A5 resolution using the formula: `cells = 6 × 4^resolution`. The algorithm targets your specified rows per partition while respecting the `--max-partitions` constraint.
+
+## By Quadkey Cells
+
+Partition by Bing Maps quadkey tiles:
+
+=== "CLI"
+
+    ```bash
+    # Auto-calculate optimal resolution for ~100K rows per partition
+    gpio partition quadkey input.parquet output/ --auto
+
+    # Auto with custom target partition size
+    gpio partition quadkey input.parquet output/ --auto --target-rows 500000
+
+    # Preview with auto-resolution
+    gpio partition quadkey input.parquet --auto --preview
+
+    # Partition at specific resolutions (column at 13, partition at 9)
+    gpio partition quadkey input.parquet output/ --resolution 13 --partition-resolution 9
+
+    # Keep quadkey column in output files
+    gpio partition quadkey input.parquet output/ --resolution 13 --partition-resolution 9 --keep-quadkey-column
+
+    # Hive-style (quadkey column included by default)
+    gpio partition quadkey input.parquet output/ --auto --hive
+    ```
+
+=== "Python"
+
+    ```python
+    import geoparquet_io as gpio
+
+    # Partition by quadkey
+    gpio.read('input.parquet').partition_by_quadkey('output/')
+
+    # Custom resolution
+    gpio.read('input.parquet').partition_by_quadkey('output/', partition_resolution=8)
+
+    # With options
+    gpio.read('input.parquet').partition_by_quadkey(
+        'output/',
+        partition_resolution=10,
+        compression='ZSTD',
+        overwrite=True
+    )
+    ```
+
+**Column behavior:**
+
+- Non-Hive: Quadkey column excluded by default (redundant with path)
+- Hive: Quadkey column included by default
+- Use `--keep-quadkey-column` to explicitly keep
+
+The quadkey column is created at `--resolution` (for full precision) but partitions are created using the first `--partition-resolution` characters, allowing coarser partitioning while retaining full precision in the column.
+
+### Auto-Resolution for Quadkey
+
+Use `--auto` to let gpio calculate the optimal quadkey zoom level:
+
+=== "CLI"
+
+    ```bash
+    # Auto-select zoom level for ~100k rows per partition (default)
+    gpio partition quadkey input.parquet output/ --auto
+
+    # Target 50k rows per partition
+    gpio partition quadkey input.parquet output/ --auto --target-rows 50000
+
+    # Limit maximum partitions created
+    gpio partition quadkey input.parquet output/ --auto --max-partitions 5000
+
+    # Preview auto-selected partitions
+    gpio partition quadkey input.parquet --auto --preview
+    ```
+
+=== "Python"
+
+    ```python
+    # Not yet implemented in Python API
+    ```
+
+Auto-resolution calculates the optimal quadkey zoom level using the formula: `tiles = 4^zoom`. The algorithm targets your specified rows per partition while respecting the `--max-partitions` constraint.
 
 ## By KD-Tree
 
@@ -384,6 +641,21 @@ Before creating files, analysis shows:
 Use `--force` to override warnings or `--skip-analysis` for performance.
 
 ## Preview Workflow
+
+### With Auto-Resolution
+
+```bash
+# 1. Preview with auto-resolution
+gpio partition h3 large.parquet --auto --preview
+
+# 2. Adjust target rows if needed
+gpio partition h3 large.parquet --auto --target-rows 50000 --preview
+
+# 3. Execute when satisfied
+gpio partition h3 large.parquet output/ --auto --target-rows 50000
+```
+
+### With Manual Resolution
 
 ```bash
 # 1. Preview to understand partitioning

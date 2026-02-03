@@ -488,6 +488,10 @@ Get the underlying PyArrow Table for interop with other Arrow-based tools.
 arrow_table = table.to_arrow()
 ```
 
+#### Spatial Partitioning Methods
+
+All spatial partitioning methods support automatic resolution calculation via CLI (`--auto` flag). Python API currently requires explicit resolution specification; auto-resolution support is planned.
+
 #### `partition_by_quadkey(output_dir, resolution=13, partition_resolution=6, compression='ZSTD', hive=True, overwrite=False)`
 
 Partition the table into a Hive-partitioned directory by quadkey.
@@ -523,6 +527,16 @@ Partition the table into a Hive-partitioned directory by S2 cell.
 ```python
 # Partition by S2
 stats = table.partition_by_s2('output/', level=10)
+print(f"Created {stats['file_count']} files")
+```
+
+#### `partition_by_a5(output_dir, resolution=15, compression='ZSTD', hive=True, overwrite=False)`
+
+Partition the table into a Hive-partitioned directory by A5 (S2-based) cell.
+
+```python
+# Partition by A5
+stats = table.partition_by_a5('output/', resolution=12)
 print(f"Created {stats['file_count']} files")
 ```
 

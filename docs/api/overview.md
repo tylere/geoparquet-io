@@ -96,7 +96,11 @@ See [Python API Reference - Pipeline Composition](python-api.md#pipeline-composi
 | `.write(path)` | Write to GeoParquet file |
 | `.upload(url)` | Upload to cloud storage |
 | `.partition_by_h3()` | Partition into H3-based files |
+| `.partition_by_s2()` | Partition into S2-based files |
+| `.partition_by_a5()` | Partition into A5-based files |
 | `.partition_by_quadkey()` | Partition into quadkey-based files |
+| `.partition_by_kdtree()` | Partition using KD-tree spatial cells |
+| `.partition_by_string()` | Partition by string column values |
 
 ## Performance
 
