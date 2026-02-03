@@ -302,6 +302,8 @@ def partition_options(func):
     - --hive: Use Hive-style partitioning
     - --overwrite: Overwrite existing partition files
     - --prefix: Custom filename prefix
+    - --min-size: Only process files larger than this size (for directory input)
+    - --in-place: Replace original files with sub-partitions
     """
     func = click.option(
         "--hive", is_flag=True, help="Use Hive-style partitioning in output folder structure"
@@ -329,6 +331,16 @@ def partition_options(func):
         "--skip-analysis",
         is_flag=True,
         help="Skip partition strategy analysis (for performance-sensitive cases)",
+    )(func)
+    func = click.option(
+        "--min-size",
+        default=None,
+        help="Only process files larger than this size when input is a directory (e.g., '100MB', '1GB')",
+    )(func)
+    func = click.option(
+        "--in-place",
+        is_flag=True,
+        help="Replace original files with sub-partitions (requires directory input with --min-size)",
     )(func)
     func = prefix_option(func)
     return func
