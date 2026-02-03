@@ -3740,8 +3740,25 @@ def partition_string(
 @click.option(
     "--resolution",
     type=click.IntRange(0, 15),
-    default=9,
-    help="H3 resolution for partitioning (0-15, default: 9)",
+    default=None,
+    help="H3 resolution for partitioning (0-15). Required unless --auto is used.",
+)
+@click.option(
+    "--auto",
+    is_flag=True,
+    help="Automatically calculate optimal resolution based on data size",
+)
+@click.option(
+    "--target-rows",
+    type=int,
+    default=100000,
+    help="Target rows per partition for auto mode (default: 100000)",
+)
+@click.option(
+    "--max-partitions",
+    type=int,
+    default=10000,
+    help="Maximum number of partitions for auto mode (default: 10000)",
 )
 @click.option(
     "--keep-h3-column",
@@ -3758,6 +3775,9 @@ def partition_h3(
     output_folder,
     h3_name,
     resolution,
+    auto,
+    target_rows,
+    max_partitions,
     keep_h3_column,
     hive,
     overwrite,
@@ -3784,21 +3804,28 @@ def partition_h3(
     partition path) unless using Hive-style partitioning. Use --keep-h3-column to explicitly
     keep the column in all cases.
 
+    Auto-resolution mode: Use --auto to automatically calculate the optimal H3 resolution
+    based on your data size. Control partition sizing with --target-rows (default: 100K rows
+    per partition) and --max-partitions (default: 10K partitions max).
+
     Use --preview to see what partitions would be created without actually creating files.
 
     Examples:
 
+        # Auto-calculate optimal resolution for ~100K rows per partition
+        gpio partition h3 input.parquet output/ --auto
+
+        # Auto-calculate with custom target partition size
+        gpio partition h3 input.parquet output/ --auto --target-rows 50000
+
         # Preview partitions at resolution 7 (~5km² cells)
         gpio partition h3 input.parquet --resolution 7 --preview
 
-        # Partition by H3 cells at default resolution 9 (H3 column excluded from output)
-        gpio partition h3 input.parquet output/
+        # Partition by H3 cells at specific resolution 9
+        gpio partition h3 input.parquet output/ --resolution 9
 
         # Partition with H3 column kept in output files
-        gpio partition h3 input.parquet output/ --keep-h3-column
-
-        # Partition with custom H3 column name
-        gpio partition h3 input.parquet output/ --h3-name my_h3
+        gpio partition h3 input.parquet output/ --resolution 9 --keep-h3-column
 
         # Use Hive-style partitioning at resolution 8 (H3 column included by default)
         gpio partition h3 input.parquet output/ --resolution 8 --hive
@@ -3834,6 +3861,9 @@ def partition_h3(
         row_group_size_mb=row_group_mb,
         row_group_rows=row_group_size,
         memory_limit=write_memory,
+        auto=auto,
+        target_rows=target_rows,
+        max_partitions=max_partitions,
     )
 
 
@@ -3848,19 +3878,25 @@ def partition_h3(
 @click.option(
     "--level",
     type=click.IntRange(0, 30),
-    default=13,
-    help="S2 level for partitioning (0-30, default: 13)",
+    default=None,
+    help="S2 level for partitioning (0-30). Required unless --auto is used.",
 )
 @click.option(
     "--auto",
     is_flag=True,
-    help="Auto-select S2 level based on target rows per partition (mutually exclusive with --level)",
+    help="Automatically calculate optimal level based on data size",
 )
 @click.option(
     "--target-rows",
     type=int,
     default=100000,
-    help="Target rows per partition for auto mode (default: 100,000)",
+    help="Target rows per partition when using --auto (default: 100000)",
+)
+@click.option(
+    "--max-partitions",
+    type=int,
+    default=10000,
+    help="Maximum partitions when using --auto (default: 10000)",
 )
 @click.option(
     "--keep-s2-column",
@@ -3879,6 +3915,7 @@ def partition_s2(
     level,
     auto,
     target_rows,
+    max_partitions,
     keep_s2_column,
     hive,
     overwrite,
@@ -3905,53 +3942,39 @@ def partition_s2(
     that divides Earth's surface into cells. Level 0 has 6 base cells, and each
     subsequent level subdivides by 4.
 
-    By default, uses level 13 (~1.2km² cells). Use --auto to automatically select
-    the optimal level based on your dataset size and --target-rows setting.
-
     By default, the S2 column is excluded from output files (since it's redundant with the
     partition path) unless using Hive-style partitioning. Use --keep-s2-column to explicitly
     keep the column in all cases.
 
     Use --preview to see what partitions would be created without actually creating files.
 
+    Auto-resolution mode: Use --auto to automatically calculate the optimal S2 level
+    based on your target partition size. Specify --target-rows (default: 100K) to control
+    partition granularity.
+
     Examples:
 
-        # Auto-select level for ~50k rows per partition
-        gpio partition s2 input.parquet output/ --auto --target-rows 50000
+        # Auto-calculate optimal level for ~100K rows per partition
+        gpio partition s2 input.parquet output/ --auto
 
-        # Explicit level 10 (~78km² cells)
-        gpio partition s2 input.parquet output/ --level 10
+        # Auto with custom target size (fewer, larger partitions)
+        gpio partition s2 input.parquet output/ --auto --target-rows 500000
 
-        # Preview auto-selected partitions
-        gpio partition s2 input.parquet --auto --preview
+        # Preview partitions at level 10 (~78km² cells)
+        gpio partition s2 input.parquet --level 10 --preview
 
-        # Partition by S2 cells at default level 13 (~1.2km² cells)
-        gpio partition s2 input.parquet output/
+        # Partition by S2 cells at level 13 (~1.2km² cells)
+        gpio partition s2 input.parquet output/ --level 13
 
         # Partition with S2 column kept in output files
-        gpio partition s2 input.parquet output/ --keep-s2-column
+        gpio partition s2 input.parquet output/ --level 12 --keep-s2-column
 
-        # Partition with custom S2 column name
-        gpio partition s2 input.parquet output/ --s2-name my_s2
-
-        # Use Hive-style partitioning at level 10 (S2 column included by default)
-        gpio partition s2 input.parquet output/ --level 10 --hive
+        # Use Hive-style partitioning (S2 column included by default)
+        gpio partition s2 input.parquet output/ --auto --hive
     """
     # If preview mode, output_folder is not required
     if not preview and not output_folder:
         raise click.UsageError("OUTPUT_FOLDER is required unless using --preview")
-
-    # Validate mutually exclusive level/auto options
-    if level != 13 and auto:  # 13 is the default
-        raise click.UsageError("--level and --auto are mutually exclusive")
-
-    # Calculate level in auto mode
-    if auto:
-        from geoparquet_io.core.partition_by_s2 import _calculate_s2_level_for_target
-
-        level = _calculate_s2_level_for_target(input_parquet, target_rows, verbose)
-        if verbose:
-            click.echo(f"Auto-selected S2 level: {level}", err=True)
 
     # Validate mutual exclusivity of row group options and get MB value
     row_group_mb = parse_row_group_options(row_group_size, row_group_size_mb)
@@ -3980,6 +4003,9 @@ def partition_s2(
         row_group_size_mb=row_group_mb,
         row_group_rows=row_group_size,
         memory_limit=write_memory,
+        auto=auto,
+        target_rows=target_rows,
+        max_partitions=max_partitions,
     )
 
 
@@ -3994,8 +4020,25 @@ def partition_s2(
 @click.option(
     "--resolution",
     type=click.IntRange(0, 30),
-    default=15,
-    help="A5 resolution for partitioning (0-30, default: 15)",
+    default=None,
+    help="A5 resolution for partitioning (0-30). Required unless --auto is used.",
+)
+@click.option(
+    "--auto",
+    is_flag=True,
+    help="Automatically calculate optimal resolution based on data size",
+)
+@click.option(
+    "--target-rows",
+    type=int,
+    default=100000,
+    help="Target rows per partition when using --auto (default: 100000)",
+)
+@click.option(
+    "--max-partitions",
+    type=int,
+    default=10000,
+    help="Maximum partitions when using --auto (default: 10000)",
 )
 @click.option(
     "--keep-a5-column",
@@ -4012,6 +4055,9 @@ def partition_a5(
     output_folder,
     a5_name,
     resolution,
+    auto,
+    target_rows,
+    max_partitions,
     keep_a5_column,
     hive,
     overwrite,
@@ -4040,22 +4086,29 @@ def partition_a5(
 
     Use --preview to see what partitions would be created without actually creating files.
 
+    Auto-resolution mode: Use --auto to automatically calculate the optimal A5 resolution
+    based on your target partition size. Specify --target-rows (default: 100K) to control
+    partition granularity.
+
     Examples:
+
+        # Auto-calculate optimal resolution for ~100K rows per partition
+        gpio partition a5 input.parquet output/ --auto
+
+        # Auto with custom target size (fewer, larger partitions)
+        gpio partition a5 input.parquet output/ --auto --target-rows 500000
 
         # Preview partitions at resolution 10 (~41km² cells)
         gpio partition a5 input.parquet --resolution 10 --preview
 
-        # Partition by A5 cells at default resolution 15 (A5 column excluded from output)
-        gpio partition a5 input.parquet output/
+        # Partition by A5 cells at resolution 15
+        gpio partition a5 input.parquet output/ --resolution 15
 
         # Partition with A5 column kept in output files
-        gpio partition a5 input.parquet output/ --keep-a5-column
+        gpio partition a5 input.parquet output/ --resolution 12 --keep-a5-column
 
-        # Partition with custom A5 column name
-        gpio partition a5 input.parquet output/ --a5-name my_a5
-
-        # Use Hive-style partitioning at resolution 12 (A5 column included by default)
-        gpio partition a5 input.parquet output/ --resolution 12 --hive
+        # Use Hive-style partitioning (A5 column included by default)
+        gpio partition a5 input.parquet output/ --auto --hive
     """
     # If preview mode, output_folder is not required
     if not preview and not output_folder:
@@ -4088,6 +4141,9 @@ def partition_a5(
         row_group_size_mb=row_group_mb,
         row_group_rows=row_group_size,
         memory_limit=write_memory,
+        auto=auto,
+        target_rows=target_rows,
+        max_partitions=max_partitions,
     )
 
 
@@ -4265,14 +4321,31 @@ def partition_kdtree(
 @click.option(
     "--resolution",
     type=click.IntRange(0, 23),
-    default=13,
-    help="Resolution for auto-adding quadkey column (0-23, default: 13)",
+    default=None,
+    help="Resolution for auto-adding quadkey column (0-23). Required unless --auto is used.",
 )
 @click.option(
     "--partition-resolution",
     type=click.IntRange(0, 23),
-    default=9,
-    help="Resolution for partitioning as prefix length (0-23, default: 9)",
+    default=None,
+    help="Resolution for partitioning as prefix length (0-23). Required unless --auto is used.",
+)
+@click.option(
+    "--auto",
+    is_flag=True,
+    help="Automatically calculate optimal resolution based on data size",
+)
+@click.option(
+    "--target-rows",
+    type=int,
+    default=100000,
+    help="Target rows per partition when using --auto (default: 100000)",
+)
+@click.option(
+    "--max-partitions",
+    type=int,
+    default=10000,
+    help="Maximum partitions when using --auto (default: 10000)",
 )
 @click.option(
     "--use-centroid",
@@ -4295,6 +4368,9 @@ def partition_quadkey(
     quadkey_column,
     resolution,
     partition_resolution,
+    auto,
+    target_rows,
+    max_partitions,
     use_centroid,
     keep_quadkey_column,
     hive,
@@ -4319,8 +4395,8 @@ def partition_quadkey(
     partition resolution. If the quadkey column doesn't exist, it will be automatically
     added at the specified resolution before partitioning.
 
-    The column is created at --resolution (default 13), but partitions are created using
-    the first --partition-resolution characters (default 9) of each quadkey. This allows
+    The column is created at --resolution, but partitions are created using
+    the first --partition-resolution characters of each quadkey. This allows
     for coarser partitioning while retaining full precision in the column.
 
     By default, the quadkey column is excluded from output files (since it's redundant
@@ -4329,22 +4405,29 @@ def partition_quadkey(
 
     Use --preview to see what partitions would be created without actually creating files.
 
+    Auto-resolution mode: Use --auto to automatically calculate the optimal quadkey zoom
+    level based on your target partition size. Specify --target-rows (default: 100K) to
+    control partition granularity.
+
     Examples:
 
-        # Preview partitions
-        gpio partition quadkey input.parquet --preview
+        # Auto-calculate optimal resolution for ~100K rows per partition
+        gpio partition quadkey input.parquet output/ --auto
 
-        # Partition by quadkey cells (column excluded from output by default)
-        gpio partition quadkey input.parquet output/
+        # Auto with custom target size (fewer, larger partitions)
+        gpio partition quadkey input.parquet output/ --auto --target-rows 500000
+
+        # Preview partitions with auto-resolution
+        gpio partition quadkey input.parquet --auto --preview
+
+        # Partition by quadkey cells at specific resolutions
+        gpio partition quadkey input.parquet output/ --resolution 13 --partition-resolution 9
 
         # Partition with quadkey column kept in output files
-        gpio partition quadkey input.parquet output/ --keep-quadkey-column
-
-        # Partition at higher resolution (zoom 12)
-        gpio partition quadkey input.parquet output/ --partition-resolution 12
+        gpio partition quadkey input.parquet output/ --resolution 13 --partition-resolution 9 --keep-quadkey-column
 
         # Use Hive-style partitioning (quadkey column included by default)
-        gpio partition quadkey input.parquet output/ --hive
+        gpio partition quadkey input.parquet output/ --auto --hive
     """
     # If preview mode, output_folder is not required
     if not preview and not output_folder:
@@ -4378,6 +4461,9 @@ def partition_quadkey(
         row_group_size_mb=row_group_mb,
         row_group_rows=row_group_size,
         memory_limit=write_memory,
+        auto=auto,
+        target_rows=target_rows,
+        max_partitions=max_partitions,
     )
 
 

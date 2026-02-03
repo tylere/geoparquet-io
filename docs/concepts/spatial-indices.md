@@ -210,15 +210,20 @@ Partitioning splits data into multiple files based on spatial location.
 ### Partitioning Commands
 
 ```bash
-# Partition by H3 cells
-gpio partition h3 input.parquet output_dir/ --resolution 6
+# Auto-calculate optimal resolution (recommended)
+gpio partition h3 input.parquet output_dir/ --auto
+gpio partition s2 input.parquet output_dir/ --auto
+gpio partition quadkey input.parquet output_dir/ --auto
 
-# Partition by quadkey
+# Or specify resolution manually
+gpio partition h3 input.parquet output_dir/ --resolution 6
 gpio partition quadkey input.parquet output_dir/ --partition-resolution 4
 
 # Partition by country
-gpio partition admin input.parquet output_dir/ --column country_code
+gpio partition admin input.parquet output_dir/ --dataset gaul --levels country
 ```
+
+**Auto-resolution** calculates the optimal spatial index resolution based on your dataset size and target partition size (default: 100K rows per partition). Use `--target-rows` to adjust.
 
 ### Python API
 
@@ -234,7 +239,12 @@ gpio.read('input.parquet') \
 gpio.read('input.parquet') \
     .add_quadkey(resolution=12) \
     .partition_by_quadkey('output/', partition_resolution=4)
+
+# Partition by S2
+gpio.read('input.parquet').partition_by_s2('output/', level=10)
 ```
+
+Note: Auto-resolution (`--auto`) is currently only available via CLI. Python API support is planned.
 
 ## Recommended Optimization Pipeline
 
