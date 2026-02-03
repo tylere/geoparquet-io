@@ -316,6 +316,7 @@ def _build_query_components(
     levels,
     partition_columns,
     input_url,
+    admin_source,
     admin_geom_col,
     admin_bbox_col,
     input_geom_col,
@@ -325,7 +326,7 @@ def _build_query_components(
     prefix=None,
 ):
     """Build all query components."""
-    admin_source = dataset.prepare_data_source(con)
+    # Use provided admin_source (may be cached local path or remote URL)
     read_options = dataset.get_read_parquet_options()
     admin_table_ref = (
         f"read_parquet({admin_source}, {', '.join([f'{k}={v}' for k, v in read_options.items()])})"
@@ -513,13 +514,14 @@ def add_admin_divisions_multi(
         total_count = con.execute(f"SELECT COUNT(*) FROM '{input_url}'").fetchone()[0]
         progress(f"Processing {total_count:,} input features...")
 
-    # Build query components
+    # Build query components (use cached admin_source from _setup_dataset_and_columns)
     query, admin_source = _build_query_components(
         con,
         dataset,
         levels,
         partition_columns,
         input_url,
+        admin_source,
         admin_geom_col,
         admin_bbox_col,
         input_geom_col,

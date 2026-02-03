@@ -2975,13 +2975,10 @@ def add_country_codes(
                     )
                 else:
                     info("Cache clear cancelled.")
-                    return
             else:
                 click.echo("No cached datasets found.")
-                return
         else:
             click.echo("No cache directory found.")
-            return
 
     # Check for streaming mode - not supported yet for admin-divisions
     if is_stdin(input_parquet) or should_stream_output(output_parquet):

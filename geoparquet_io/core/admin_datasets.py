@@ -16,6 +16,7 @@ from pathlib import Path
 import click
 import duckdb
 
+from geoparquet_io.core.common import get_duckdb_connection
 from geoparquet_io.core.logging_config import debug, info, warn
 
 # =============================================================================
@@ -240,12 +241,9 @@ class AdminDataset(ABC):
         Raises:
             Exception: If download fails
         """
-        import duckdb
-
         source = self.get_default_source()
 
-        con = duckdb.connect()
-        con.execute("INSTALL httpfs; LOAD httpfs;")
+        con = get_duckdb_connection(load_spatial=True, load_httpfs=True)
         self.configure_s3(con)
 
         # Get read options
