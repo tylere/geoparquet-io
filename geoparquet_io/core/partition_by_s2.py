@@ -241,9 +241,10 @@ def partition_by_s2(
     if not auto and level is None:
         raise click.UsageError("Must specify either --level or --auto")
 
-    # Calculate auto level if requested
-    if auto:
-        try:
+    # Wrap all operations in try/finally to ensure stdin temp file cleanup
+    try:
+        # Calculate auto level if requested
+        if auto:
             level = calculate_auto_resolution(
                 input_parquet=actual_input,
                 spatial_index_type="s2",
@@ -255,21 +256,14 @@ def partition_by_s2(
                 profile=profile,
             )
             info(f"Auto-calculated S2 level: {level}")
-        except Exception as e:
-            if stdin_temp_file and os.path.exists(stdin_temp_file):
-                os.remove(stdin_temp_file)
-            raise click.ClickException(f"Auto-resolution calculation failed: {str(e)}") from e
 
-    # Validate resolved level
-    if not 0 <= level <= 30:
-        if stdin_temp_file and os.path.exists(stdin_temp_file):
-            os.remove(stdin_temp_file)
-        raise click.UsageError(f"S2 level must be between 0 and 30, got {level}")
+        # Validate user-provided level (auto mode always returns valid range)
+        # This check is defensive for auto mode but necessary for user-provided levels
+        if not 0 <= level <= 30:
+            raise click.UsageError(f"S2 level must be between 0 and 30, got {level}")
 
-    if keep_s2_column is None:
-        keep_s2_column = hive
-
-    try:
+        if keep_s2_column is None:
+            keep_s2_column = hive
         working_parquet, column_existed, temp_file = _ensure_s2_column(
             actual_input, s2_column_name, level, verbose
         )
