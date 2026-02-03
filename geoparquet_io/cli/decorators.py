@@ -582,26 +582,32 @@ def handle_directory_sub_partition(
     from geoparquet_io.core.logging_config import warn
     from geoparquet_io.core.sub_partition import sub_partition_directory
 
-    min_size_bytes = parse_size_string(min_size)
+    try:
+        min_size_bytes = parse_size_string(min_size)
+    except ValueError as e:
+        raise click.UsageError(str(e)) from None
 
-    result = sub_partition_directory(
-        directory=input_parquet,
-        partition_type=partition_type,
-        min_size_bytes=min_size_bytes,
-        resolution=resolution,
-        level=level,
-        in_place=in_place,
-        hive=hive,
-        overwrite=overwrite,
-        verbose=verbose,
-        force=force,
-        skip_analysis=skip_analysis,
-        compression=compression.upper() if compression else "ZSTD",
-        compression_level=compression_level or 15,
-        auto=auto,
-        target_rows=target_rows,
-        max_partitions=max_partitions,
-    )
+    try:
+        result = sub_partition_directory(
+            directory=input_parquet,
+            partition_type=partition_type,
+            min_size_bytes=min_size_bytes,
+            resolution=resolution,
+            level=level,
+            in_place=in_place,
+            hive=hive,
+            overwrite=overwrite,
+            verbose=verbose,
+            force=force,
+            skip_analysis=skip_analysis,
+            compression=compression.upper() if compression else "ZSTD",
+            compression_level=compression_level or 15,
+            auto=auto,
+            target_rows=target_rows,
+            max_partitions=max_partitions,
+        )
+    except ValueError as e:
+        raise click.UsageError(str(e)) from None
 
     if result["errors"]:
         for err in result["errors"]:
