@@ -587,43 +587,49 @@ class TestCheckCacheAge:
 
     def test_new_cache_no_warning(self):
         """Test that new cache files don't trigger warning."""
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
-            cache_file = Path(f.name)
-            try:
-                # File was just created, should be recent
-                warning = check_cache_age(cache_file)
-                assert warning is None
-            finally:
-                cache_file.unlink()
+        # Create temp file and close it immediately (Windows compatibility)
+        f = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+        cache_file = Path(f.name)
+        f.close()
+        try:
+            # File was just created, should be recent
+            warning = check_cache_age(cache_file)
+            assert warning is None
+        finally:
+            cache_file.unlink()
 
     def test_old_cache_triggers_warning(self):
         """Test that cache files older than 6 months trigger warning."""
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
-            cache_file = Path(f.name)
-            try:
-                # Set file modification time to 7 months ago
-                seven_months_ago = time.time() - (7 * 30 * 24 * 60 * 60)
-                os.utime(cache_file, (seven_months_ago, seven_months_ago))
+        # Create temp file and close it immediately (Windows compatibility)
+        f = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+        cache_file = Path(f.name)
+        f.close()
+        try:
+            # Set file modification time to 7 months ago
+            seven_months_ago = time.time() - (7 * 30 * 24 * 60 * 60)
+            os.utime(cache_file, (seven_months_ago, seven_months_ago))
 
-                warning = check_cache_age(cache_file)
-                assert warning is not None
-                assert "6 months" in warning or "old" in warning.lower()
-            finally:
-                cache_file.unlink()
+            warning = check_cache_age(cache_file)
+            assert warning is not None
+            assert "6 months" in warning or "old" in warning.lower()
+        finally:
+            cache_file.unlink()
 
     def test_six_month_boundary(self):
         """Test behavior at exactly 6 months."""
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
-            cache_file = Path(f.name)
-            try:
-                # Set file modification time to exactly 6 months ago (should trigger)
-                six_months_ago = time.time() - (6 * 30 * 24 * 60 * 60)
-                os.utime(cache_file, (six_months_ago, six_months_ago))
+        # Create temp file and close it immediately (Windows compatibility)
+        f = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+        cache_file = Path(f.name)
+        f.close()
+        try:
+            # Set file modification time to exactly 6 months ago (should trigger)
+            six_months_ago = time.time() - (6 * 30 * 24 * 60 * 60)
+            os.utime(cache_file, (six_months_ago, six_months_ago))
 
-                warning = check_cache_age(cache_file)
-                assert warning is not None
-            finally:
-                cache_file.unlink()
+            warning = check_cache_age(cache_file)
+            assert warning is not None
+        finally:
+            cache_file.unlink()
 
     def test_nonexistent_file_returns_none(self):
         """Test that non-existent file returns None (no warning)."""
@@ -793,16 +799,18 @@ class TestGetOrCacheDataset:
 
     def test_local_source_not_cached(self):
         """Test that local files are not cached."""
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
-            local_path = f.name
-            try:
-                dataset = GAULAdminDataset(source_path=local_path)
-                result = get_or_cache_dataset(dataset)
+        # Create temp file and close it immediately (Windows compatibility)
+        f = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+        local_path = f.name
+        f.close()
+        try:
+            dataset = GAULAdminDataset(source_path=local_path)
+            result = get_or_cache_dataset(dataset)
 
-                # Should return local path as-is
-                assert result == local_path
-            finally:
-                os.unlink(local_path)
+            # Should return local path as-is
+            assert result == local_path
+        finally:
+            os.unlink(local_path)
 
     def test_age_warning_on_old_cache(self):
         """Test that old cache triggers age warning."""
