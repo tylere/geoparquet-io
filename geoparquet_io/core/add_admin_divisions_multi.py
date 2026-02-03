@@ -327,11 +327,12 @@ def _build_query_components(
 ):
     """Build all query components."""
     # Use provided admin_source (may be cached local path or remote URL)
+    # Quote the path for SQL safety
     read_options = dataset.get_read_parquet_options()
     admin_table_ref = (
-        f"read_parquet({admin_source}, {', '.join([f'{k}={v}' for k, v in read_options.items()])})"
+        f"read_parquet('{admin_source}', {', '.join([f'{k}={v}' for k, v in read_options.items()])})"
         if read_options
-        else admin_source
+        else f"'{admin_source}'"
     )
 
     admin_where_clauses = _build_admin_where_clauses_list(
