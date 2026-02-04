@@ -101,10 +101,11 @@ def _pyarrow_get_file_metadata(parquet_file: str) -> dict:
         raise GeoParquetError(f"Cannot read file: {parquet_file}\n{str(e)}") from e
 
 
-def _pyarrow_get_schema_info(parquet_file: str) -> list[dict]:
+def _pyarrow_get_schema_info(parquet_file: str) -> list[dict] | None:
     """Get schema info using PyArrow (fast path for local files).
 
-    Returns list of dicts matching DuckDB's parquet_schema() format.
+    Returns list of dicts matching DuckDB's parquet_schema() format,
+    or None if PyArrow cannot handle the file (e.g., unsupported CRS format).
     """
     try:
         pf = pq.ParquetFile(parquet_file)
@@ -176,6 +177,12 @@ def _pyarrow_get_schema_info(parquet_file: str) -> list[dict]:
                     result.append(child_info)
 
         return result
+    except ValueError as e:
+        # geoarrow-pyarrow may fail on unsupported CRS formats (e.g., srid:5070)
+        # Return None to fall back to DuckDB
+        if "Can't create geoarrow.types.Crs" in str(e):
+            return None
+        raise GeoParquetError(f"Cannot read schema: {parquet_file}\n{str(e)}") from e
     except Exception as e:
         raise GeoParquetError(f"Cannot read schema: {parquet_file}\n{str(e)}") from e
 
@@ -188,22 +195,37 @@ def _get_pyarrow_logical_type(field) -> str | None:
     - GeometryType(crs=srid:5070)
     - GeometryType(crs={...})  (inline PROJJSON)
     - GeometryType()  (no CRS)
+
+    Handles two scenarios:
+    1. geoarrow-pyarrow imported: CRS is in field.type.crs attribute
+    2. geoarrow-pyarrow not imported: CRS is in field.metadata['ARROW:extension:metadata']
     """
+    geoarrow_extensions = (
+        "geoarrow.wkb",
+        "ogc.wkb",
+        "geoarrow.point",
+        "geoarrow.linestring",
+        "geoarrow.polygon",
+        "geoarrow.multipoint",
+        "geoarrow.multilinestring",
+        "geoarrow.multipolygon",
+        "geoarrow.geometry",
+    )
+
     # Check for extension type registered with PyArrow
     if hasattr(field.type, "extension_name"):
         ext_name = field.type.extension_name
-        if ext_name in (
-            "geoarrow.wkb",
-            "ogc.wkb",
-            "geoarrow.point",
-            "geoarrow.linestring",
-            "geoarrow.polygon",
-            "geoarrow.multipoint",
-            "geoarrow.multilinestring",
-            "geoarrow.multipolygon",
-            "geoarrow.geometry",
-        ):
-            # This is a geometry type - try to get CRS from extension metadata
+        if ext_name in geoarrow_extensions:
+            # Case 1: geoarrow-pyarrow is imported - CRS is in field.type.crs
+            # This takes priority because geoarrow-pyarrow consumes the metadata
+            if hasattr(field.type, "crs") and field.type.crs is not None:
+                crs_obj = field.type.crs
+                # geoarrow-pyarrow provides .to_json_dict() for PROJJSON
+                if hasattr(crs_obj, "to_json_dict"):
+                    crs_dict = crs_obj.to_json_dict()
+                    return f"GeometryType(crs={json.dumps(crs_dict)})"
+
+            # Case 2: Try extension_metadata (older geoarrow or direct Arrow)
             if hasattr(field.type, "extension_metadata") and field.type.extension_metadata:
                 try:
                     ext_meta = json.loads(field.type.extension_metadata)
@@ -471,7 +493,10 @@ def get_schema_info(parquet_file: str, con=None) -> list[dict]:
     # Fast path: use PyArrow for local files
     resolved_path = _resolve_local_path(parquet_file)
     if _is_local_file(resolved_path) and con is None:
-        return _pyarrow_get_schema_info(resolved_path)
+        result = _pyarrow_get_schema_info(resolved_path)
+        if result is not None:
+            return result
+        # Fall through to DuckDB if PyArrow couldn't handle the file
 
     # Slow path: use DuckDB for remote files or when connection is provided
     safe_url = _safe_url(parquet_file)

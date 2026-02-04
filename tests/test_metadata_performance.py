@@ -245,6 +245,58 @@ class TestDetectGeoparquetFileTypeCache:
         assert result2["has_geo_metadata"] is True
 
 
+class TestGeoArrowPyArrowCRSExtraction:
+    """Test CRS extraction works when geoarrow-pyarrow is imported.
+
+    When geoarrow-pyarrow is imported, it registers custom extension types
+    that change how PyArrow exposes geometry metadata. The CRS is available
+    via field.type.crs instead of field.metadata['ARROW:extension:metadata'].
+    """
+
+    def test_pyarrow_schema_info_extracts_crs_with_geoarrow(self, fields_5070_file):
+        """Test get_schema_info extracts CRS when geoarrow-pyarrow is imported."""
+        # Import geoarrow to register extension types (simulates CI environment)
+        import geoarrow.pyarrow  # noqa: F401
+
+        from geoparquet_io.core.duckdb_metadata import (
+            get_schema_info,
+            parse_geometry_logical_type,
+        )
+
+        schema_info = get_schema_info(fields_5070_file)
+
+        # Find geometry column
+        geom_col = next((c for c in schema_info if c.get("name") == "geometry"), None)
+        assert geom_col is not None, "No geometry column found"
+
+        logical_type = geom_col.get("logical_type")
+        assert logical_type is not None, "No logical_type for geometry column"
+        assert logical_type.startswith("GeometryType("), f"Unexpected logical_type: {logical_type}"
+
+        # Parse the logical type to extract CRS
+        parsed = parse_geometry_logical_type(logical_type)
+        assert parsed is not None, "Failed to parse geometry logical type"
+        assert "crs" in parsed, f"No CRS in parsed result: {parsed}"
+
+        crs = parsed["crs"]
+        assert isinstance(crs, dict), f"CRS should be dict, got {type(crs)}"
+        assert "id" in crs, f"CRS missing 'id' key: {crs}"
+        assert crs["id"]["code"] == 5070, f"Expected EPSG:5070, got {crs['id']}"
+
+    def test_extract_crs_from_parquet_with_geoarrow(self, fields_5070_file):
+        """Test extract_crs_from_parquet works when geoarrow-pyarrow is imported."""
+        # Import geoarrow to register extension types
+        import geoarrow.pyarrow  # noqa: F401
+
+        from geoparquet_io.core.common import extract_crs_from_parquet
+
+        crs = extract_crs_from_parquet(fields_5070_file)
+
+        assert crs is not None, "Failed to extract CRS"
+        assert isinstance(crs, dict), f"CRS should be dict, got {type(crs)}"
+        assert crs.get("id", {}).get("code") == 5070, f"Expected EPSG:5070, got {crs}"
+
+
 class TestPerformanceRegression:
     """Integration tests for performance regression fix."""
 
