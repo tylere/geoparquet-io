@@ -1304,11 +1304,95 @@ def extract_crs_from_parquet(parquet_file, verbose=False):
     return None
 
 
+def _detect_crs_from_filegdb(gdb_path, con, verbose=False):
+    """
+    Detect CRS from a FileGDB directory by iterating internal .gdbtable files.
+
+    DuckDB's ST_Read_Meta returns empty for FileGDB directories (a known limitation),
+    but works when pointed at individual .gdbtable files inside the directory.
+    This workaround iterates through those files to find CRS metadata.
+
+    Args:
+        gdb_path: Path to the .gdb directory
+        con: DuckDB connection (with spatial extension loaded)
+        verbose: Whether to print verbose output
+
+    Returns:
+        dict: PROJJSON CRS dict, or None if no CRS found.
+    """
+    # Normalize path (remove trailing slash - handle both Unix and Windows separators)
+    gdb_path = gdb_path.rstrip("/\\")
+
+    if not os.path.isdir(gdb_path):
+        return None
+
+    # Iterate through .gdbtable files in reverse order (user tables have higher numbers)
+    try:
+        gdbtable_files = sorted(
+            [f for f in os.listdir(gdb_path) if f.endswith(".gdbtable")],
+            reverse=True,
+        )
+    except OSError:
+        return None
+
+    for gdbtable_file in gdbtable_files:
+        gdbtable_path = os.path.join(gdb_path, gdbtable_file)
+        # Escape single quotes in path for SQL safety
+        escaped_path = gdbtable_path.replace("'", "''")
+        try:
+            result = con.execute(f"""
+                SELECT * FROM ST_Read_Meta('{escaped_path}')
+            """).fetchone()
+
+            if not result or not result[3]:
+                continue
+
+            # Result structure: (path, driver, driver_long, layers_list)
+            for layer in result[3]:
+                layer_name = layer.get("name", "")
+
+                # Skip system tables (GDB_*)
+                if layer_name.startswith("GDB_"):
+                    continue
+
+                geometry_fields = layer.get("geometry_fields", [])
+                if not geometry_fields:
+                    continue
+
+                crs_info = geometry_fields[0].get("crs", {})
+
+                # Try PROJJSON first (most complete)
+                projjson_str = crs_info.get("projjson")
+                if projjson_str:
+                    crs = json.loads(projjson_str)
+                    if verbose:
+                        debug(
+                            f"Found CRS in FileGDB layer '{layer_name}': {_format_crs_display(crs)}"
+                        )
+                    return crs
+
+                # Fallback to auth_name/auth_code
+                auth_name = crs_info.get("auth_name")
+                auth_code = crs_info.get("auth_code")
+                if auth_name and auth_code:
+                    crs = {"id": {"authority": auth_name, "code": int(auth_code)}}
+                    if verbose:
+                        debug(f"Found CRS in FileGDB layer '{layer_name}': {auth_name}:{auth_code}")
+                    return crs
+
+        except Exception:
+            # Skip files that can't be read
+            continue
+
+    return None
+
+
 def detect_crs_from_spatial_file(input_file, con, verbose=False):
     """
-    Detect CRS from a spatial file (GeoJSON, GPKG, Shapefile).
+    Detect CRS from a spatial file (GeoJSON, GPKG, Shapefile, FileGDB).
 
     Uses DuckDB's ST_Read_Meta which returns metadata including full PROJJSON CRS.
+    For FileGDB directories, uses a workaround since ST_Read_Meta returns empty.
 
     Args:
         input_file: Path to the spatial file
@@ -1320,9 +1404,11 @@ def detect_crs_from_spatial_file(input_file, con, verbose=False):
               Note: Returns CRS even if it's default (EPSG:4326). Caller should
               use is_default_crs() to decide whether to write it.
     """
+    # Escape single quotes in path for SQL safety
+    escaped_input_file = input_file.replace("'", "''")
     try:
         result = con.execute(f"""
-            SELECT * FROM ST_Read_Meta('{input_file}')
+            SELECT * FROM ST_Read_Meta('{escaped_input_file}')
         """).fetchone()
 
         if result:
@@ -1351,6 +1437,13 @@ def detect_crs_from_spatial_file(input_file, con, verbose=False):
     except Exception as e:
         if verbose:
             warn(f"Could not detect CRS from spatial file: {e}")
+
+    # Fallback for FileGDB directories (ST_Read_Meta returns empty for .gdb directories)
+    # Handle both Unix and Windows path separators
+    if input_file.rstrip("/\\").lower().endswith(".gdb"):
+        if verbose:
+            debug("ST_Read_Meta returned empty for FileGDB, trying workaround...")
+        return _detect_crs_from_filegdb(input_file, con, verbose)
 
     return None
 
