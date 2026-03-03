@@ -1320,8 +1320,8 @@ def _detect_crs_from_filegdb(gdb_path, con, verbose=False):
     Returns:
         dict: PROJJSON CRS dict, or None if no CRS found.
     """
-    # Normalize path (remove trailing slash)
-    gdb_path = gdb_path.rstrip("/")
+    # Normalize path (remove trailing slash - handle both Unix and Windows separators)
+    gdb_path = gdb_path.rstrip("/\\")
 
     if not os.path.isdir(gdb_path):
         return None
@@ -1337,9 +1337,11 @@ def _detect_crs_from_filegdb(gdb_path, con, verbose=False):
 
     for gdbtable_file in gdbtable_files:
         gdbtable_path = os.path.join(gdb_path, gdbtable_file)
+        # Escape single quotes in path for SQL safety
+        escaped_path = gdbtable_path.replace("'", "''")
         try:
             result = con.execute(f"""
-                SELECT * FROM ST_Read_Meta('{gdbtable_path}')
+                SELECT * FROM ST_Read_Meta('{escaped_path}')
             """).fetchone()
 
             if not result or not result[3]:
@@ -1402,9 +1404,11 @@ def detect_crs_from_spatial_file(input_file, con, verbose=False):
               Note: Returns CRS even if it's default (EPSG:4326). Caller should
               use is_default_crs() to decide whether to write it.
     """
+    # Escape single quotes in path for SQL safety
+    escaped_input_file = input_file.replace("'", "''")
     try:
         result = con.execute(f"""
-            SELECT * FROM ST_Read_Meta('{input_file}')
+            SELECT * FROM ST_Read_Meta('{escaped_input_file}')
         """).fetchone()
 
         if result:
@@ -1435,7 +1439,8 @@ def detect_crs_from_spatial_file(input_file, con, verbose=False):
             warn(f"Could not detect CRS from spatial file: {e}")
 
     # Fallback for FileGDB directories (ST_Read_Meta returns empty for .gdb directories)
-    if input_file.rstrip("/").lower().endswith(".gdb"):
+    # Handle both Unix and Windows path separators
+    if input_file.rstrip("/\\").lower().endswith(".gdb"):
         if verbose:
             debug("ST_Read_Meta returned empty for FileGDB, trying workaround...")
         return _detect_crs_from_filegdb(input_file, con, verbose)
