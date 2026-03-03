@@ -62,6 +62,7 @@ nav:
     - CLI vs Python: getting-started/cli-vs-python.md
   - Concepts:
     - What is GeoParquet?: concepts/geoparquet-overview.md
+    - Spatial Performance: concepts/spatial-indices.md
     - Best Practices: concepts/best-practices.md
   - User Guide:
     - Inspecting Files: guide/inspect.md
@@ -76,6 +77,7 @@ nav:
     - Partitioning Files: guide/partition.md
     - Sub-Partitioning Large Files: guide/sub-partitioning.md
     - Remote Files & Authentication: guide/remote-files.md
+    - Unix Piping: guide/piping.md
     - Uploading to Cloud Storage: guide/upload.md
     - STAC Generation: guide/stac.md
   - CLI Reference:
