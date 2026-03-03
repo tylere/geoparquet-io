@@ -133,9 +133,8 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install gdal
 
-      - name: Install GDAL (Windows)
-        if: runner.os == 'Windows'
-        run: choco install gdal --yes
+      # Note: GDAL is not easily installable on Windows via Chocolatey.
+      # FileGDB tests will gracefully skip on Windows and run on Linux/macOS.
 
       - name: Install dependencies
         run: uv sync --all-extras
