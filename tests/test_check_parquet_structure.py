@@ -90,6 +90,20 @@ class TestAssessRowGroupSize:
         assert status == "poor"
         assert color == "red"
 
+    def test_no_profile_is_same_as_omitted_profile(self):
+        """Test no profile gives the same result as omitting a profile entirely."""
+        # Small file under 64 MB
+        total_size = 50 * 1024 * 1024  # 50 MB
+        avg_group_size = 50 * 1024 * 1024  # 50 MB
+        statusNoProfile, message, colorNoProfile = assess_row_group_size(
+            avg_group_size, total_size, profile=None
+        )
+        statusOmittedProfile, message, colorOmittedProfile = assess_row_group_size(
+            avg_group_size, total_size
+        )
+        assert statusNoProfile == statusOmittedProfile == "optimal"
+        assert colorNoProfile == colorOmittedProfile == "green"
+
 
 class TestAssessRowCount:
     """Tests for assess_row_count function."""

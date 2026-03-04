@@ -2,7 +2,6 @@
 
 
 from enum import Enum
-from typing import Literal
 
 from geoparquet_io.core.common import (
     check_bbox_structure,
@@ -17,12 +16,12 @@ from geoparquet_io.core.metadata_utils import has_parquet_geo_row_group_stats
 class CheckProfile(str, Enum):
     """
     Profiles for checking parquet file structure
-    Different profiles allow different thresholds for
-    checks like row group size
+    based on specific use cases
+
+    Attributes:
+        web: Parquet file will be queried from the browser directly
     """
 
-    # A parquet file that will be consumed via a browser-based
-    # web frontend
     web = "web"
 
 
@@ -152,7 +151,7 @@ def check_row_groups(
     verbose=False,
     return_results=False,
     quiet=False,
-    profile: Literal["web"] | None = None,
+    profile: CheckProfile | None = None,
 ):
     """Check row group optimization and print results.
 
@@ -161,7 +160,7 @@ def check_row_groups(
         verbose: Print additional information
         return_results: If True, return structured results dict instead of only printing
         quiet: If True, suppress all output (for multi-file batch mode)
-        profile: If "web" is specified, allow for smaller row groups
+        profile: Check row groups for specific use case
 
     Returns:
         dict if return_results=True, containing:

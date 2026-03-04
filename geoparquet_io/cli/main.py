@@ -958,6 +958,7 @@ def check_row_group_cmd(
     overwrite,
     check_all_files,
     check_sample,
+    profile,
 ):
     """Check row group size."""
     from geoparquet_io.core.check_fixes import fix_row_groups
@@ -992,7 +993,7 @@ def check_row_group_cmd(
         show_output = runner.verbose or not runner.is_multi_file
         quiet = not show_output
         result = check_row_groups(
-            file_path, verbose and show_output, return_results=True, quiet=quiet
+            file_path, verbose and show_output, return_results=True, quiet=quiet, profile=profile
         )
 
         # Record result for summary
