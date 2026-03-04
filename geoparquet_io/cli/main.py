@@ -33,6 +33,7 @@ from geoparquet_io.core.add_h3_column import add_h3_column as add_h3_column_impl
 from geoparquet_io.core.add_kdtree_column import add_kdtree_column as add_kdtree_column_impl
 from geoparquet_io.core.add_quadkey_column import add_quadkey_column as add_quadkey_column_impl
 from geoparquet_io.core.add_s2_column import add_s2_column as add_s2_column_impl
+from geoparquet_io.core.check_parquet_structure import CheckProfile
 from geoparquet_io.core.check_parquet_structure import check_all as check_structure_impl
 from geoparquet_io.core.check_spatial_order import check_spatial_order as check_spatial_impl
 from geoparquet_io.core.common import validate_parquet_extension
@@ -435,6 +436,13 @@ class MultiFileCheckRunner:
     is_flag=True,
     help="Show full spec validation results instead of summary",
 )
+@click.option(
+    "--profile",
+    type=click.Choice([c.value for c in CheckProfile], case_sensitive=False),
+    required=False,
+    default=None,
+    help="Check best practices for specific use case",
+)
 @check_partition_options
 def check_all(
     parquet_file,
@@ -448,6 +456,7 @@ def check_all(
     spec_details,
     check_all_files,
     check_sample,
+    profile,
 ):
     """Check compression, bbox, row groups, spatial order, and spec compliance."""
     from geoparquet_io.core.common import is_remote_url, show_remote_read_message
@@ -491,7 +500,7 @@ def check_all(
         show_output = runner.verbose or not runner.is_multi_file
         quiet = not show_output
         structure_results = check_structure_impl(
-            file_path, verbose and show_output, return_results=True, quiet=quiet
+            file_path, verbose and show_output, return_results=True, quiet=quiet, profile=profile
         )
 
         if show_output:
@@ -930,6 +939,13 @@ def check_bbox_cmd(
     "--no-backup",
     is_flag=True,
     help="Skip .bak backup when fixing",
+)
+@click.option(
+    "--profile",
+    type=click.Choice([c.value for c in CheckProfile], case_sensitive=False),
+    required=False,
+    default=None,
+    help="Check best practices for specific use case",
 )
 @overwrite_option
 @check_partition_options

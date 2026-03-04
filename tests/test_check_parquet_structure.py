@@ -6,6 +6,7 @@ Fixtures used in this module:
 """
 
 from geoparquet_io.core.check_parquet_structure import (
+    CheckProfile,
     assess_row_count,
     assess_row_group_size,
     check_compression,
@@ -60,6 +61,26 @@ class TestAssessRowGroupSize:
         status, message, color = assess_row_group_size(avg_group_size, total_size)
         assert status == "poor"
         assert color == "red"
+
+    def test_optimal_for_web(self):
+        """Test poor status for very large row groups."""
+        total_size = 2000 * 1024 * 1024  # 2 GB total
+        avg_group_size = 10 * 1024 * 1024  # 10 MB
+        status, message, color = assess_row_group_size(
+            avg_group_size, total_size, profile=CheckProfile.web
+        )
+        assert status == "optimal"
+        assert color == "green"
+
+    def test_suboptimal_for_excessively_small_groups_on_web(self):
+        """Test poor status for very large row groups."""
+        total_size = 2000 * 1024 * 1024  # 2 GB total
+        avg_group_size = 1 * 1024 * 1024  # 1 MB
+        status, message, color = assess_row_group_size(
+            avg_group_size, total_size, profile=CheckProfile.web
+        )
+        assert status == "suboptimal"
+        assert color == "yellow"
 
     def test_poor_for_very_large_groups(self):
         """Test poor status for very large row groups."""

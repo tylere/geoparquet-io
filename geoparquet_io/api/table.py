@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from geoparquet_io.core.check_parquet_structure import CheckProfile
 from geoparquet_io.core.common import write_geoparquet_table
 
 if TYPE_CHECKING:
@@ -2019,7 +2020,7 @@ class Table:
         )
         return CheckResult(results, check_type="bbox")
 
-    def check_row_groups(self) -> CheckResult:
+    def check_row_groups(self, profile: CheckProfile | None = None) -> CheckResult:
         """
         Check row group optimization.
 
@@ -2038,7 +2039,7 @@ class Table:
         from geoparquet_io.core.check_parquet_structure import check_row_groups
 
         results = self._with_temp_file(
-            check_row_groups, verbose=False, return_results=True, quiet=True
+            check_row_groups, verbose=False, return_results=True, quiet=True, profile=profile
         )
         return CheckResult(results, check_type="row_groups")
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 
+from enum import Enum
+from typing import Literal
+
 from geoparquet_io.core.common import (
     check_bbox_structure,
     detect_geoparquet_file_type,
@@ -9,6 +12,18 @@ from geoparquet_io.core.common import (
 )
 from geoparquet_io.core.logging_config import error, info, progress, success, warn
 from geoparquet_io.core.metadata_utils import has_parquet_geo_row_group_stats
+
+
+class CheckProfile(str, Enum):
+    """
+    Profiles for checking parquet file structure
+    Different profiles allow different thresholds for
+    checks like row group size
+    """
+
+    # A parquet file that will be consumed via a browser-based
+    # web frontend
+    web = "web"
 
 
 def get_row_group_stats(parquet_file):
@@ -28,7 +43,9 @@ def get_row_group_stats(parquet_file):
     return get_row_group_stats_summary(parquet_file)
 
 
-def assess_row_group_size(avg_group_size_bytes, total_size_bytes):
+def assess_row_group_size(
+    avg_group_size_bytes, total_size_bytes, profile: CheckProfile | None = None
+):
     """
     Assess if row group size is optimal.
 
@@ -43,6 +60,19 @@ def assess_row_group_size(avg_group_size_bytes, total_size_bytes):
 
     if total_size_mb < 64:
         return "optimal", "Row group size is appropriate for small file", "green"
+
+    if profile == CheckProfile.web:
+        if avg_group_size_mb < 1.5:
+            return (
+                "suboptimal",
+                "Row group size may be excessively small for file consumed queried directly from a web frontend",
+                "yellow",
+            )
+        return (
+            "optimal",
+            "Row group size could be appropriate for file queried directly from a web frontend",
+            "green",
+        )
 
     if 64 <= avg_group_size_mb <= 256:
         return "optimal", "Row group size is optimal (64-256 MB)", "green"
@@ -117,7 +147,13 @@ def get_compression_info(parquet_file, column_name=None):
     return duckdb_get_compression_info(parquet_file, column_name)
 
 
-def check_row_groups(parquet_file, verbose=False, return_results=False, quiet=False):
+def check_row_groups(
+    parquet_file,
+    verbose=False,
+    return_results=False,
+    quiet=False,
+    profile: Literal["web"] | None = None,
+):
     """Check row group optimization and print results.
 
     Args:
@@ -125,6 +161,7 @@ def check_row_groups(parquet_file, verbose=False, return_results=False, quiet=Fa
         verbose: Print additional information
         return_results: If True, return structured results dict instead of only printing
         quiet: If True, suppress all output (for multi-file batch mode)
+        profile: If "web" is specified, allow for smaller row groups
 
     Returns:
         dict if return_results=True, containing:
@@ -138,7 +175,7 @@ def check_row_groups(parquet_file, verbose=False, return_results=False, quiet=Fa
     stats = get_row_group_stats(parquet_file)
 
     size_status, size_message, size_color = assess_row_group_size(
-        stats["avg_group_size"], stats["total_size"]
+        stats["avg_group_size"], stats["total_size"], profile=profile
     )
     row_status, row_message, row_color = assess_row_count(
         stats["avg_rows_per_group"], stats["total_size"], stats["num_groups"]
@@ -505,7 +542,13 @@ def check_compression(parquet_file, verbose=False, return_results=False, quiet=F
         return results
 
 
-def check_all(parquet_file, verbose=False, return_results=False, quiet=False):
+def check_all(
+    parquet_file,
+    verbose=False,
+    return_results=False,
+    quiet=False,
+    profile: CheckProfile | None = None,
+):
     """Run all structure checks.
 
     Args:
@@ -517,7 +560,9 @@ def check_all(parquet_file, verbose=False, return_results=False, quiet=False):
     Returns:
         dict if return_results=True, containing results from all checks
     """
-    row_groups_result = check_row_groups(parquet_file, verbose, return_results=True, quiet=quiet)
+    row_groups_result = check_row_groups(
+        parquet_file, verbose, return_results=True, quiet=quiet, profile=profile
+    )
     bbox_result = check_metadata_and_bbox(parquet_file, verbose, return_results=True, quiet=quiet)
     compression_result = check_compression(parquet_file, verbose, return_results=True, quiet=quiet)
 
