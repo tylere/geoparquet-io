@@ -67,6 +67,8 @@ dev = [
     "vulture>=2.14",
     "radon>=6.0.1",
     "xenon>=0.9.3",
+    "commitizen>=4.0",
+    "tomli>=2.0.0;python_version<'3.11'",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -139,6 +141,15 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "1.0.0b2"
+version_files = ["pyproject.toml:^version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+major_version_zero = true
 
 [tool.vulture]
 min_confidence = 80
