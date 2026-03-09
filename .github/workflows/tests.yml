@@ -33,6 +33,12 @@ jobs:
       - name: Type check
         run: uv run mypy geoparquet_io/
 
+      - name: Check architecture
+        run: uv run lint-imports
+
+      - name: Check CLAUDE.md sections are current
+        run: uv run python scripts/generate_claude_md_sections.py --check
+
       - name: Check code complexity (informational)
         run: uv run xenon --max-absolute=E --max-modules=D --max-average=C geoparquet_io tests
         continue-on-error: true
@@ -40,6 +46,38 @@ jobs:
       - name: Check for dead code (informational)
         run: uv run vulture
         continue-on-error: true
+
+      - name: Check freshness markers
+        run: uv run python scripts/update_freshness.py --check --warn-days 30
+        continue-on-error: true
+
+      - name: Check spelling
+        run: uv run codespell
+
+      - name: Validate CLAUDE.md
+        run: uv run python scripts/validate_claude_md.py
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Security scan (bandit)
+        run: uv run bandit -r geoparquet_io/ -c pyproject.toml
+
+      - name: Dependency audit
+        run: uv run pip-audit
 
   test:
     runs-on: ${{ matrix.os }}

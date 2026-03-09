@@ -20,6 +20,13 @@ repos:
       # Run the formatter
       - id: ruff-format
 
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+
     # find unused code
   - repo: https://github.com/jendrikseipp/vulture
     rev: 'v2.14'
@@ -32,6 +39,16 @@ repos:
     hooks:
     - id: xenon
       args: ['--max-absolute=E', '--max-modules=D', '--max-average=C']
+
+    # enforce architecture: core must not import click, api must not import cli
+  - repo: local
+    hooks:
+    - id: import-linter
+      name: import-linter
+      entry: uv run lint-imports
+      language: system
+      pass_filenames: false
+      always_run: true
 
     # enforce logger usage over click.echo in core/
   - repo: local
@@ -69,6 +86,14 @@ repos:
       language: system
       pass_filenames: false
       always_run: true
+
+    - id: validate-claude-md
+      name: validate-claude-md
+      description: Validate CLAUDE.md against the actual codebase
+      entry: uv run python scripts/validate_claude_md.py
+      language: system
+      files: ^(CLAUDE\.md|geoparquet_io/cli/main\.py|pyproject\.toml)$
+      pass_filenames: false
 
     - id: check-commit-msg
       name: check-commit-msg
@@ -117,6 +142,22 @@ repos:
       language: system
       pass_filenames: false
       stages: [push]
+
+    - id: update-freshness
+      name: update-freshness
+      description: Update CLAUDE.md freshness markers when mapped files change
+      entry: uv run python scripts/update_freshness.py --update
+      language: system
+      files: ^(geoparquet_io/cli/main\.py|geoparquet_io/core/common\.py|geoparquet_io/cli/decorators\.py|pyproject\.toml)$
+      pass_filenames: false
+
+    - id: update-claude-md-sections
+      name: update-claude-md-sections
+      description: Auto-update generated CLAUDE.md sections
+      entry: uv run python scripts/generate_claude_md_sections.py --update
+      language: system
+      files: ^(geoparquet_io/cli/main\.py|pyproject\.toml|geoparquet_io/core/.*\.py)$
+      pass_filenames: false
 
     - id: sync-dependencies
       name: sync-dependencies

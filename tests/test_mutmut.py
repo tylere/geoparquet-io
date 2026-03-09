@@ -51,15 +51,19 @@ def _get_triggers(workflow: dict[str, Any]) -> dict[str, Any]:
 class TestMutmutConfig:
     """Test mutmut is properly configured."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="mutmut CLI has issues on Windows; mutation testing runs on Ubuntu only",
+    )
     def test_mutmut_installed(self):
         """Verify mutmut is installed and reports a version."""
         result = subprocess.run(
-            ["uv", "run", "mutmut", "--version"],
+            [sys.executable, "-m", "mutmut", "--version"],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        assert result.returncode == 0
+        assert result.returncode == 0, f"mutmut --version failed:\n{result.stdout}\n{result.stderr}"
         # mutmut version output should contain the word "mutmut" or a version number
         output = result.stdout.lower() + result.stderr.lower()
         assert "mutmut" in output or any(c.isdigit() for c in output)
