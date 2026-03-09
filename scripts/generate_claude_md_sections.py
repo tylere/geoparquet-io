@@ -20,7 +20,14 @@ import sys
 from pathlib import Path
 
 import click
-import tomllib
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomllib  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        import tomli as tomllib  # type: ignore[no-redef]
 
 
 def get_cli_commands() -> dict[str, dict]:
@@ -110,6 +117,25 @@ def generate_markers_section(pyproject_path: Path) -> str:
     return "\n".join(lines)
 
 
+def _extract_module_docstring(content: str) -> str:
+    """Extract the first meaningful line from a module docstring.
+
+    Handles both single-line (``\"\"\"Desc.\"\"\"``) and multi-line
+    (``\"\"\"\\nDesc.\\n\"\"\"``) docstring formats.
+    """
+    if not content.startswith('"""'):
+        return ""
+    end = content.find('"""', 3)
+    if end <= 0:
+        return ""
+    raw = content[3:end]
+    for line in raw.split("\n"):
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
 def get_core_modules(core_path: Path) -> list[dict]:
     """Scan core directory for Python modules.
 
@@ -125,12 +151,7 @@ def get_core_modules(core_path: Path) -> list[dict]:
             continue
         content = py_file.read_text()
         line_count = len(content.splitlines())
-        # Extract module docstring for purpose
-        docstring = ""
-        if content.startswith('"""'):
-            end = content.find('"""', 3)
-            if end > 0:
-                docstring = content[3:end].split("\n")[0].strip()
+        docstring = _extract_module_docstring(content)
         modules.append(
             {
                 "name": py_file.name,
@@ -184,7 +205,7 @@ def update_section(content: str, section_name: str, new_content: str) -> str:
     )
 
     if re.search(pattern, content, re.DOTALL):
-        return re.sub(pattern, new_content, content, flags=re.DOTALL)
+        return re.sub(pattern, new_content, content, count=1, flags=re.DOTALL)
     else:
         # Section doesn't exist yet - return unchanged
         return content
@@ -197,8 +218,9 @@ def main() -> int:
         Exit code: 0 on success/up-to-date, 1 if outdated (--check), 2 on error.
     """
     parser = argparse.ArgumentParser(description="Generate CLAUDE.md sections from code")
-    parser.add_argument("--update", action="store_true", help="Update CLAUDE.md in place")
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--update", action="store_true", help="Update CLAUDE.md in place")
+    group.add_argument(
         "--check", action="store_true", help="Check if sections are current (exit 1 if not)"
     )
     args = parser.parse_args()
@@ -210,6 +232,14 @@ def main() -> int:
 
     if not claude_md.exists():
         print("ERROR: CLAUDE.md not found")
+        return 2
+
+    if not pyproject.exists():
+        print("ERROR: pyproject.toml not found")
+        return 2
+
+    if not core_path.is_dir():
+        print(f"ERROR: core directory not found at {core_path}")
         return 2
 
     original = claude_md.read_text()

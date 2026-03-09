@@ -95,20 +95,20 @@ geoparquet_io/
 | Module | Purpose | Lines |
 |--------|---------|-------|
 | `common.py` |  | 4070 |
-| `validate.py` |  | 2854 |
-| `inspect_utils.py` |  | 1546 |
-| `duckdb_metadata.py` |  | 1277 |
-| `extract.py` |  | 1237 |
+| `validate.py` | GeoParquet file validation against specification r... | 2854 |
+| `inspect_utils.py` | Utilities for inspecting GeoParquet files. | 1546 |
+| `duckdb_metadata.py` | DuckDB-based Parquet metadata extraction. | 1277 |
+| `extract.py` | Extract columns and rows from GeoParquet files. | 1237 |
 | `convert.py` |  | 1136 |
-| `metadata_utils.py` |  | 1077 |
-| `arcgis.py` |  | 975 |
+| `metadata_utils.py` | Utilities for extracting and formatting GeoParquet... | 1077 |
+| `arcgis.py` | ArcGIS Feature Service to GeoParquet conversion. | 975 |
 | `extract_bigquery.py` |  | 909 |
 | `partition_common.py` |  | 908 |
 | `admin_datasets.py` |  | 735 |
-| `benchmark.py` |  | 699 |
+| `benchmark.py` | Benchmark utilities for comparing GeoParquet conve... | 699 |
 | `partition_admin_hierarchical.py` |  | 697 |
 | `upload.py` | Upload GeoParquet files to cloud object storage. | 675 |
-| `geojson_stream.py` |  | 667 |
+| `geojson_stream.py` | GeoJSON conversion for GeoParquet files. | 667 |
 | ... | *36 more modules* | |
 <!-- END GENERATED: core-modules -->
 
