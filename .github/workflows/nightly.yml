@@ -1,0 +1,76 @@
+name: Nightly CI
+
+on:
+  schedule:
+    # Run at 4 AM UTC daily
+    - cron: '0 4 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  mutation:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # Mutation testing can be slow
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run mutation testing
+        run: |
+          # Allow mutmut to exit non-zero (exit code 2 = surviving mutants)
+          # but fail on actual errors (exit code 1 = crash)
+          EXIT_CODE=0
+          uv run mutmut run --no-progress --CI || EXIT_CODE=$?
+          if [ "$EXIT_CODE" -eq 1 ]; then
+            echo "::error::mutmut crashed during execution"
+            exit 1
+          fi
+          uv run mutmut results
+
+      - name: Check kill rate
+        run: |
+          # Extract stats from mutmut results
+          RESULTS=$(uv run mutmut results 2>&1)
+          echo "$RESULTS"
+
+          # Parse killed and survived counts using POSIX-compatible patterns
+          # mutmut 3.x outputs lines like "Killed: 42" or "Survived: 5"
+          KILLED=$(echo "$RESULTS" | sed -n 's/.*[Kk]illed[: ]*\([0-9]*\).*/\1/p' | head -1)
+          SURVIVED=$(echo "$RESULTS" | sed -n 's/.*[Ss]urvived[: ]*\([0-9]*\).*/\1/p' | head -1)
+
+          # Default to 0 if parsing fails
+          KILLED=${KILLED:-0}
+          SURVIVED=${SURVIVED:-0}
+          TOTAL=$((KILLED + SURVIVED))
+
+          if [ "$TOTAL" -gt 0 ]; then
+            RATE=$((KILLED * 100 / TOTAL))
+            echo "Mutation kill rate: $RATE% ($KILLED/$TOTAL)"
+
+            # Fail if kill rate is below threshold (start with 50%, increase over time)
+            if [ "$RATE" -lt 50 ]; then
+              echo "::warning::Mutation kill rate below 50% threshold"
+              # Don't fail initially - just warn
+              # exit 1
+            fi
+          else
+            echo "::warning::No mutations generated or could not parse mutmut output"
+          fi
+
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: .mutmut-cache/
+          retention-days: 30

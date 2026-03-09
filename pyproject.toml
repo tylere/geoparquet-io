@@ -68,6 +68,8 @@ dev = [
     "vulture>=2.14",
     "radon>=6.0.1",
     "xenon>=0.9.3",
+    "mutmut>=3.0",
+    "pyyaml>=6.0",
     "codespell>=2.2",
     "import-linter>=2.0",
     "bandit>=1.7",
@@ -206,6 +208,11 @@ module = [
     "geoparquet_io.core.write_strategies.duckdb_kv",
 ]
 ignore_errors = true
+
+[tool.mutmut]
+paths_to_mutate = "geoparquet_io/"
+tests_dir = "tests/"
+runner = "python -m pytest -x -q --tb=no"
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "docs"]
