@@ -73,19 +73,44 @@ geoparquet_io/
 ```
 
 <!-- freshness: last-verified: 2026-03-09, maps-to: geoparquet_io/cli/main.py -->
+<!-- BEGIN GENERATED: cli-commands -->
 ### CLI Command Groups
 
-```bash
-gpio add           # Enhance files (admin-divisions, bbox, h3, etc.)
-gpio convert       # Format/CRS conversion
-gpio extract       # Extract from files/services
-gpio inspect       # Inspect files (meta, preview, schema)
-gpio partition     # Partition files (quadkey, h3, s2, admin, etc.)
-gpio publish       # Publish (stac, upload)
-gpio sort          # Sort files (hilbert, geohash)
-gpio check         # Validate best practices
-gpio benchmark     # Performance testing
-```
+| Command Group | Subcommands | Description |
+|---------------|-------------|-------------|
+| `gpio add` | a5, admin-divisions, bbox, bbox-metadata, h3, kdtree, quadkey, s2 | Commands for enhancing GeoParquet files in various ways |
+| `gpio benchmark` | compare, report, suite | Benchmark GeoParquet performance |
+| `gpio check` | all, bbox, compression, row-group, spatial, spec, stac | Check GeoParquet files for best practices |
+| `gpio convert` | csv, flatgeobuf, geojson, geopackage, geoparquet, reproject, shapefile | Convert between formats and coordinate systems |
+| `gpio extract` | arcgis, bigquery, geoparquet | Extract data from files and services to GeoParquet |
+| `gpio inspect` | head, meta, stats, summary, tail | Inspect GeoParquet files and show metadata, previews, or statistics |
+| `gpio partition` | a5, admin, h3, kdtree, quadkey, s2, string | Commands for partitioning GeoParquet files |
+| `gpio publish` | stac, upload | Commands for publishing GeoParquet data (STAC metadata, cloud uploads) |
+| `gpio sort` | column, hilbert, quadkey | Commands for sorting GeoParquet files |
+<!-- END GENERATED: cli-commands -->
+
+<!-- BEGIN GENERATED: core-modules -->
+### Core Modules
+
+| Module | Purpose | Lines |
+|--------|---------|-------|
+| `common.py` |  | 4070 |
+| `validate.py` | GeoParquet file validation against specification r... | 2854 |
+| `inspect_utils.py` | Utilities for inspecting GeoParquet files. | 1546 |
+| `duckdb_metadata.py` | DuckDB-based Parquet metadata extraction. | 1277 |
+| `extract.py` | Extract columns and rows from GeoParquet files. | 1237 |
+| `convert.py` |  | 1136 |
+| `metadata_utils.py` | Utilities for extracting and formatting GeoParquet... | 1077 |
+| `arcgis.py` | ArcGIS Feature Service to GeoParquet conversion. | 975 |
+| `extract_bigquery.py` |  | 909 |
+| `partition_common.py` |  | 908 |
+| `admin_datasets.py` |  | 735 |
+| `benchmark.py` | Benchmark utilities for comparing GeoParquet conve... | 699 |
+| `partition_admin_hierarchical.py` |  | 697 |
+| `upload.py` | Upload GeoParquet files to cloud object storage. | 675 |
+| `geojson_stream.py` | GeoJSON conversion for GeoParquet files. | 667 |
+| ... | *36 more modules* | |
+<!-- END GENERATED: core-modules -->
 
 <!-- freshness: last-verified: 2026-03-09, maps-to: geoparquet_io/core/common.py, geoparquet_io/cli/decorators.py -->
 ### Key Patterns
@@ -134,9 +159,16 @@ uv run pytest tests/test_extract.py::TestParseBbox::test_valid_bbox -v
 uv run pytest --cov=geoparquet_io --cov-report=term-missing
 ```
 
-**Test markers:**
-- `@pytest.mark.slow` - Tests >5s, conversions, reprojection
-- `@pytest.mark.network` - Requires network access
+<!-- BEGIN GENERATED: test-markers -->
+### Test Markers
+
+| Marker | Description |
+|--------|-------------|
+| `@pytest.mark.slow` | marks tests as slow (deselect with '-m "not slow"') |
+| `@pytest.mark.network` | marks tests requiring network access (deselect with '-m "not network"') |
+| `@pytest.mark.integration` | marks end-to-end integration tests |
+<!-- END GENERATED: test-markers -->
+
 - **Coverage requirement**: 75% minimum (enforced), 80% for new code
 
 ---
