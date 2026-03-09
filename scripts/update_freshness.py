@@ -11,7 +11,10 @@ Usage:
     python scripts/update_freshness.py --check  # Exit 1 if stale (for CI)
 """
 
+from __future__ import annotations
+
 import argparse
+import logging
 import re
 import subprocess
 import sys
@@ -20,6 +23,8 @@ from pathlib import Path
 
 # Staleness threshold in days
 STALENESS_THRESHOLD_DAYS = 30
+
+logger = logging.getLogger(__name__)
 
 
 def parse_freshness_markers(content: str) -> list[dict]:
@@ -42,14 +47,20 @@ def parse_freshness_markers(content: str) -> list[dict]:
 
 
 def get_file_last_modified(file_path: Path, project_root: Path) -> datetime | None:
-    """Get the last modification date of a file from git."""
-    full_path = project_root / file_path
-    if not full_path.exists():
+    """Get the last modification date of a file from git.
+
+    Args:
+        file_path: Absolute or relative path to the file. If relative,
+            it is resolved against *project_root*.
+        project_root: The git repository root used as ``cwd`` for git.
+    """
+    resolved = file_path if file_path.is_absolute() else project_root / file_path
+    if not resolved.exists():
         return None
 
     try:
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%ci", str(full_path)],
+            ["git", "log", "-1", "--format=%ci", str(resolved)],
             capture_output=True,
             text=True,
             cwd=project_root,
@@ -59,8 +70,8 @@ def get_file_last_modified(file_path: Path, project_root: Path) -> datetime | No
             # Parse git date format: "2026-03-09 10:30:00 -0500"
             date_str = result.stdout.strip().split()[0]
             return datetime.strptime(date_str, "%Y-%m-%d")
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("Could not get git date for %s: %s", file_path, exc)
     return None
 
 
