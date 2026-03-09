@@ -64,11 +64,15 @@ dev = [
     "ruff>=0.8.0",
     "pre-commit>=4.3.0",
     "mypy>=1.0.0",
+    "tomli>=2.0.0;python_version<'3.11'",
     "vulture>=2.14",
     "radon>=6.0.1",
     "xenon>=0.9.3",
     "commitizen>=4.0",
-    "tomli>=2.0.0;python_version<'3.11'",
+    "codespell>=2.2",
+    "import-linter>=2.0",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -86,6 +90,7 @@ packages = ["geoparquet_io"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
@@ -141,6 +146,84 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+# Suppress errors from libraries that don't ship type stubs
+ignore_missing_imports = true
+
+# Per-module overrides for files with known type issues.
+# These suppress errors in complex modules until they are incrementally fixed.
+# TODO: Remove overrides as type annotations are added to each module.
+[[tool.mypy.overrides]]
+module = [
+    "geoparquet_io.api.check",
+    "geoparquet_io.api.ops",
+    "geoparquet_io.api.table",
+    "geoparquet_io.benchmarks.profile_report",
+    "geoparquet_io.cli.decorators",
+    "geoparquet_io.cli.main",
+    "geoparquet_io.core.add_bbox_column",
+    "geoparquet_io.core.add_country_codes",
+    "geoparquet_io.core.add_h3_column",
+    "geoparquet_io.core.add_kdtree_column",
+    "geoparquet_io.core.add_quadkey_column",
+    "geoparquet_io.core.add_s2_column",
+    "geoparquet_io.core.admin_datasets",
+    "geoparquet_io.core.arcgis",
+    "geoparquet_io.core.benchmark",
+    "geoparquet_io.core.benchmark_suite",
+    "geoparquet_io.core.check_fixes",
+    "geoparquet_io.core.check_parquet_structure",
+    "geoparquet_io.core.check_spatial_order",
+    "geoparquet_io.core.common",
+    "geoparquet_io.core.convert",
+    "geoparquet_io.core.duckdb_metadata",
+    "geoparquet_io.core.extract",
+    "geoparquet_io.core.extract_bigquery",
+    "geoparquet_io.core.hilbert_order",
+    "geoparquet_io.core.inspect_utils",
+    "geoparquet_io.core.metadata_utils",
+    "geoparquet_io.core.partition_admin_hierarchical",
+    "geoparquet_io.core.partition_auto_resolution",
+    "geoparquet_io.core.partition_by_a5",
+    "geoparquet_io.core.partition_by_h3",
+    "geoparquet_io.core.partition_by_kdtree",
+    "geoparquet_io.core.partition_by_s2",
+    "geoparquet_io.core.partition_by_string",
+    "geoparquet_io.core.partition_reader",
+    "geoparquet_io.core.reproject",
+    "geoparquet_io.core.sort_by_column",
+    "geoparquet_io.core.sort_quadkey",
+    "geoparquet_io.core.split_by_country",
+    "geoparquet_io.core.stac",
+    "geoparquet_io.core.stac_check",
+    "geoparquet_io.core.stream_io",
+    "geoparquet_io.core.streaming",
+    "geoparquet_io.core.sub_partition",
+    "geoparquet_io.core.upload",
+    "geoparquet_io.core.validate",
+    "geoparquet_io.core.write_strategies",
+    "geoparquet_io.core.write_strategies.arrow_streaming",
+    "geoparquet_io.core.write_strategies.base",
+    "geoparquet_io.core.write_strategies.disk_rewrite",
+    "geoparquet_io.core.write_strategies.duckdb_kv",
+]
+ignore_errors = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "docs"]
+skips = [
+    "B608",  # SQL injection false positives: DuckDB is an embedded OLAP database;
+             # all SQL queries use internally-derived column names (from schema detection),
+             # not untrusted user input. Parameterised queries are not supported for
+             # column/table identifiers in DuckDB's Python API.
+    "B110",  # try/except/pass: all instances are intentional (race-condition guards for
+             # DuckDB extension installation, optional cleanup, optional metadata ops).
+    "B112",  # try/except/continue: intentional in iteration over optional schema columns.
+    "B404",  # subprocess import: used only in the benchmark module to call ogr2ogr.
+    "B603",  # subprocess without shell=True: ogr2ogr call in benchmark with a fixed argv list.
+    "B607",  # partial executable path: ogr2ogr relies on PATH, which is standard practice.
+    "B105",  # hardcoded password: false positive on an ArcGIS token endpoint URL constant.
+    "B101",  # assert used: single internal logic guard (assert overall_bounds is not None).
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
@@ -156,6 +239,11 @@ min_confidence = 80
 paths = ["geoparquet_io", "tests"]
 sort_by_size = true
 verbose = false
+
+[tool.codespell]
+skip = ".git,*.lock,*.parquet,*.json,tests/data/*,.venv,uv.lock"
+ignore-words-list = "nd,ot,crs,inout"
+check-filenames = true
 
 [tool.coverage.run]
 source = ["geoparquet_io"]
@@ -173,6 +261,34 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.importlinter]
+root_package = "geoparquet_io"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "core-no-click"
+name = "Core modules must not import Click"
+type = "forbidden"
+source_modules = ["geoparquet_io.core"]
+forbidden_modules = ["click"]
+# TODO: These are existing violations to be fixed incrementally. New code must not import click in core/.
+# Direct click imports in existing core modules are ignored until cleaned up.
+# The indirect path (benchmark_suite -> geoparquet_io root -> cli.main -> click)
+# is also excluded since benchmark_suite lazily imports __version__ from the root package.
+ignore_imports = [
+    "geoparquet_io.core.* -> click",
+    "geoparquet_io.core.benchmark_suite -> geoparquet_io",
+]
+# Alert when ignored patterns no longer match any actual imports (stale ignores)
+unmatched_ignore_imports_alerting = "warn"
+
+[[tool.importlinter.contracts]]
+id = "api-no-cli"
+name = "API modules must not import CLI"
+type = "forbidden"
+source_modules = ["geoparquet_io.api"]
+forbidden_modules = ["geoparquet_io.cli"]
 
 [dependency-groups]
 dev = [

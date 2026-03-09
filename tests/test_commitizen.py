@@ -219,7 +219,7 @@ class TestPreCommitConfig:
 
         import yaml  # safe_load is available via pyyaml, a commitizen dep
 
-        with open(pre_commit_cfg) as f:
+        with open(pre_commit_cfg, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         repos = config.get("repos", [])
@@ -240,15 +240,18 @@ class TestPreCommitConfig:
 
         import yaml
 
-        with open(pre_commit_cfg) as f:
+        with open(pre_commit_cfg, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         repos = config.get("repos", [])
         local_repos = [r for r in repos if r.get("repo") == "local"]
         assert local_repos, "No local repo found in .pre-commit-config.yaml"
 
-        hooks = local_repos[0].get("hooks", [])
-        commit_msg_hooks = [h for h in hooks if h.get("id") == "check-commit-msg"]
+        # Search all local repo sections for the check-commit-msg hook
+        all_local_hooks = []
+        for local_repo in local_repos:
+            all_local_hooks.extend(local_repo.get("hooks", []))
+        commit_msg_hooks = [h for h in all_local_hooks if h.get("id") == "check-commit-msg"]
         assert commit_msg_hooks, "check-commit-msg hook not found"
 
         # The hook's bash script should contain the conventional commit skip pattern
