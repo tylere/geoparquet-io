@@ -1499,6 +1499,7 @@ def convert_geojson(
                 precision=precision,
                 write_bbox=write_bbox,
                 id_field=id_field,
+                description=description,
                 pretty=pretty,
                 keep_crs=keep_crs,
                 overwrite=overwrite,
@@ -1833,8 +1834,11 @@ def _validate_parquet_input(file_path: str) -> None:
 
     # Extract filename from path (handles both local and remote URLs)
     if "://" in file_path:
-        path_part = file_path.split("://", 1)[1]
-        filename = path_part.split("/")[-1] if "/" in path_part else path_part
+        # Use urllib.parse to properly handle URLs with query strings (e.g., presigned URLs)
+        from urllib.parse import urlparse
+
+        parsed = urlparse(file_path)
+        filename = os.path.basename(parsed.path)
     else:
         filename = os.path.basename(file_path)
 

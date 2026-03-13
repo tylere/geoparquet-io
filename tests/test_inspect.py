@@ -223,6 +223,24 @@ def test_inspect_misnamed_parquet_file(runner, tmp_path):
     assert "data.parquet" in result.output
 
 
+def test_validate_parquet_input_presigned_url():
+    """Test that presigned URLs with query strings are handled correctly."""
+    from geoparquet_io.cli.main import _validate_parquet_input
+
+    # Presigned URL with .parquet extension should pass validation
+    presigned_url = (
+        "https://bucket.s3.amazonaws.com/data.parquet?X-Amz-Algorithm=AWS4&X-Amz-Signature=abc123"
+    )
+    # Should not raise (parquet extension is correctly detected)
+    _validate_parquet_input(presigned_url)
+
+    # Presigned URL without .parquet should fail
+    presigned_csv = "https://bucket.s3.amazonaws.com/data.csv?X-Amz-Algorithm=AWS4"
+    with pytest.raises(Exception) as exc_info:
+        _validate_parquet_input(presigned_csv)
+    assert "only works with Parquet files" in str(exc_info.value)
+
+
 def test_extract_file_info(test_file):
     """Test extract_file_info function."""
     info = extract_file_info(test_file)

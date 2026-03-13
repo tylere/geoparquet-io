@@ -524,6 +524,40 @@ class TestNoGeometryConversions:
             data = json.load(f)
         assert isinstance(data, (list, dict))
 
+    def test_case_insensitive_geometry_detection(self, tmp_path):
+        """Test that geometry columns are detected case-insensitively."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        import shapely
+
+        # Create parquet with uppercase "Geometry" column
+        geom = shapely.Point(0, 0)
+        table = pa.table(
+            {
+                "id": [1, 2],
+                "name": ["A", "B"],
+                "Geometry": [shapely.to_wkb(geom), shapely.to_wkb(geom)],  # Uppercase
+            }
+        )
+        input_path = tmp_path / "mixed_case.parquet"
+        pq.write_table(table, input_path)
+
+        output_path = tmp_path / "output.fgb"
+
+        # Should NOT raise "no geometry column" error - the uppercase Geometry should be detected
+        # Note: This may fail for other reasons (e.g., invalid WKB), but should not fail
+        # with the "no geometry" error
+        try:
+            write_flatgeobuf(
+                input_path=str(input_path),
+                output_path=str(output_path),
+                verbose=False,
+            )
+        except Exception as e:
+            # If it fails, make sure it's NOT due to missing geometry
+            assert "no geometry column" not in str(e).lower()
+            assert "requires geometry" not in str(e).lower()
+
 
 class TestGeoJSONWriter:
     """Tests for GeoJSON format writer."""

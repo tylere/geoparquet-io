@@ -212,9 +212,9 @@ def write_gdal_format(
             pf = pq.ParquetFile(f)
             schema = pf.schema_arrow
 
-        # Check for geometry column
-        column_names = [field.name for field in schema]
-        has_geometry = any(col in column_names for col in GEOMETRY_COLUMNS)
+        # Check for geometry column (case-insensitive)
+        column_names_lower = [field.name.lower() for field in schema]
+        has_geometry = any(col in column_names_lower for col in GEOMETRY_COLUMNS)
 
         # FlatGeobuf requires geometry - fail early with a clear message
         if not has_geometry and format_name == "flatgeobuf":
@@ -403,6 +403,7 @@ def write_geojson(
     precision: int = 7,
     write_bbox: bool = False,
     id_field: str | None = None,
+    description: str | None = None,
     pretty: bool = False,
     keep_crs: bool = False,
     overwrite: bool = False,
@@ -421,6 +422,7 @@ def write_geojson(
         precision: Coordinate decimal precision (default: 7)
         write_bbox: Include bbox property for features (default: False)
         id_field: Field to use as feature 'id' member
+        description: FeatureCollection description (default: None)
         pretty: Pretty-print JSON output (default: False)
         keep_crs: Keep original CRS instead of reprojecting to WGS84 (default: False)
         overwrite: Overwrite existing file if True (default: False)
@@ -459,8 +461,8 @@ def write_geojson(
     with fsspec.open(input_url, "rb") as f:
         pf = pq.ParquetFile(f)
         schema = pf.schema_arrow
-    column_names = [field.name for field in schema]
-    has_geometry = any(col in column_names for col in GEOMETRY_COLUMNS)
+    column_names_lower = [field.name.lower() for field in schema]
+    has_geometry = any(col in column_names_lower for col in GEOMETRY_COLUMNS)
 
     if not has_geometry:
         # No geometry - output as plain JSON array with warning
@@ -514,6 +516,7 @@ def write_geojson(
             precision=precision,
             write_bbox=write_bbox,
             id_field=id_field,
+            description=description,
             pretty=pretty,
             keep_crs=keep_crs,
             verbose=verbose,
