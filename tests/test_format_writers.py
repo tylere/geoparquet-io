@@ -21,6 +21,7 @@ from geoparquet_io.cli.main import cli
 from geoparquet_io.core.format_writers import (
     write_csv,
     write_flatgeobuf,
+    write_geojson,
     write_geopackage,
     write_shapefile,
 )
@@ -187,6 +188,24 @@ class TestFlatGeobufWriter:
             # Check for FlatGeobuf signature (fgb + version, typically 0x03)
             assert magic.startswith(b"fgb"), f"Invalid FlatGeobuf magic bytes: {magic[:4].hex()}"
 
+    def test_overwrite_protection(self, output_file):
+        """Test that overwrite=False prevents overwriting."""
+        # Create initial file
+        write_flatgeobuf(
+            input_path=str(PLACES_PARQUET),
+            output_path=output_file,
+            verbose=False,
+        )
+
+        # Try to overwrite - should raise error
+        with pytest.raises(Exception, match="already exists|Use --overwrite"):
+            write_flatgeobuf(
+                input_path=str(PLACES_PARQUET),
+                output_path=output_file,
+                overwrite=False,
+                verbose=False,
+            )
+
 
 class TestCSVWriter:
     """Tests for CSV format writer."""
@@ -278,6 +297,63 @@ class TestCSVWriter:
             if Path(malicious_path).exists():
                 Path(malicious_path).unlink()
 
+    def test_overwrite_protection(self, output_file):
+        """Test that overwrite=False prevents overwriting."""
+        # Create initial file
+        write_csv(
+            input_path=str(PLACES_PARQUET),
+            output_path=output_file,
+            verbose=False,
+        )
+
+        # Try to overwrite - should raise error
+        with pytest.raises(Exception, match="already exists|Use --overwrite"):
+            write_csv(
+                input_path=str(PLACES_PARQUET),
+                output_path=output_file,
+                overwrite=False,
+                verbose=False,
+            )
+
+    def test_csv_plain_parquet_no_geometry(self, output_file, tmp_path):
+        """Test CSV export of plain Parquet without geometry column."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        # Create a plain parquet file without geometry
+        table = pa.table(
+            {
+                "id": [1, 2, 3],
+                "name": ["Alice", "Bob", "Charlie"],
+                "score": [85.5, 92.0, 78.3],
+            }
+        )
+        plain_parquet = tmp_path / "plain.parquet"
+        pq.write_table(table, plain_parquet)
+
+        # Should succeed without error
+        result = write_csv(
+            input_path=str(plain_parquet),
+            output_path=output_file,
+            include_wkt=True,  # Even with this True, should work
+            verbose=False,
+        )
+        assert result == output_file
+        assert Path(output_file).exists()
+
+        # Verify CSV structure
+        import csv
+
+        with open(output_file, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 3
+            assert "id" in rows[0]
+            assert "name" in rows[0]
+            assert "score" in rows[0]
+            # Should NOT have wkt column since no geometry
+            assert "wkt" not in rows[0]
+
 
 class TestShapefileWriter:
     """Tests for Shapefile format writer."""
@@ -361,6 +437,122 @@ class TestShapefileWriter:
             # Should be encoding error, not SQL error
             error_msg = str(e).lower()
             assert "sql" not in error_msg and "syntax" not in error_msg
+
+
+class TestNoGeometryConversions:
+    """Tests for converting plain Parquet files without geometry columns."""
+
+    @pytest.fixture
+    def plain_parquet(self, tmp_path):
+        """Create a plain parquet file without geometry."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        table = pa.table(
+            {
+                "id": [1, 2, 3],
+                "name": ["Alice", "Bob", "Charlie"],
+                "score": [85.5, 92.0, 78.3],
+            }
+        )
+        path = tmp_path / "plain.parquet"
+        pq.write_table(table, path)
+        return str(path)
+
+    def test_flatgeobuf_no_geometry_error(self, plain_parquet, tmp_path):
+        """Test FlatGeobuf gives friendly error for files without geometry."""
+        output_file = tmp_path / "output.fgb"
+
+        with pytest.raises(Exception) as exc_info:
+            write_flatgeobuf(
+                input_path=plain_parquet,
+                output_path=str(output_file),
+                verbose=False,
+            )
+        # Should have a friendly error message, not raw GDAL error
+        assert "FlatGeobuf requires geometry" in str(exc_info.value)
+
+    def test_shapefile_no_geometry_warns(self, plain_parquet, tmp_path, capfd):
+        """Test Shapefile warns when no geometry column found."""
+        output_file = tmp_path / "output.shp"
+
+        write_shapefile(
+            input_path=plain_parquet,
+            output_path=str(output_file),
+            verbose=False,
+        )
+        # Should warn about no geometry
+        captured = capfd.readouterr()
+        assert "no geometry" in captured.err.lower() or "no geometry" in captured.out.lower()
+
+    def test_geopackage_no_geometry_warns(self, plain_parquet, tmp_path, capfd):
+        """Test GeoPackage warns when no geometry column found."""
+        output_file = tmp_path / "output.gpkg"
+
+        write_geopackage(
+            input_path=plain_parquet,
+            output_path=str(output_file),
+            verbose=False,
+        )
+        # Should warn about no geometry
+        captured = capfd.readouterr()
+        assert "no geometry" in captured.err.lower() or "no geometry" in captured.out.lower()
+
+    def test_geojson_no_geometry_outputs_json(self, plain_parquet, tmp_path, capfd):
+        """Test GeoJSON outputs plain JSON when no geometry, with warning."""
+        output_file = tmp_path / "output.json"
+
+        write_geojson(
+            input_path=plain_parquet,
+            output_path=str(output_file),
+            verbose=False,
+        )
+
+        # Should warn it's not valid GeoJSON
+        captured = capfd.readouterr()
+        assert (
+            "not valid geojson" in captured.err.lower()
+            or "not valid geojson" in captured.out.lower()
+            or "standard json" in captured.err.lower()
+            or "standard json" in captured.out.lower()
+        )
+
+        # Output should be valid JSON
+        import json
+
+        with open(output_file) as f:
+            data = json.load(f)
+        assert isinstance(data, (list, dict))
+
+
+class TestGeoJSONWriter:
+    """Tests for GeoJSON format writer."""
+
+    @pytest.fixture
+    def output_file(self):
+        """Create temp output file path."""
+        tmp_path = Path(tempfile.gettempdir()) / f"test_{uuid.uuid4()}.geojson"
+        yield str(tmp_path)
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+    def test_overwrite_protection(self, output_file):
+        """Test that overwrite=False prevents overwriting."""
+        # Create initial file
+        write_geojson(
+            input_path=str(PLACES_PARQUET),
+            output_path=output_file,
+            verbose=False,
+        )
+
+        # Try to overwrite - should raise error
+        with pytest.raises(Exception, match="already exists|Use --overwrite"):
+            write_geojson(
+                input_path=str(PLACES_PARQUET),
+                output_path=output_file,
+                overwrite=False,
+                verbose=False,
+            )
 
 
 class TestCLIConvertSubcommands:
