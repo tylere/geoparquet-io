@@ -612,7 +612,13 @@ def _convert_csv_path(
     verbose,
     geoparquet_version=None,
 ):
-    """Handle CSV/TSV conversion path. Returns SQL query."""
+    """Handle CSV/TSV conversion path. Returns SQL query.
+
+    When skip_invalid=True, materializes parsed geometries into a temp table
+    to avoid re-evaluating TRY(ST_GeomFromText(...)) in downstream metadata
+    queries. DuckDB 1.5 can segfault when ST_GeometryType() or spatial
+    aggregates operate on inlined TRY() subqueries under parallel execution.
+    """
     from geoparquet_io.core.common import should_skip_bbox
 
     # Determine if bbox should be skipped for this version
@@ -659,9 +665,20 @@ def _convert_csv_path(
                 msg = "Reading CSV, creating geometries, and applying Hilbert ordering..."
         debug(msg)
 
-    return _build_csv_conversion_query(
+    query = _build_csv_conversion_query(
         geom_info, effective_skip_hilbert, bounds, skip_invalid, skip_bbox=skip_bbox
     )
+
+    # Materialize skip_invalid queries into a temp table to avoid DuckDB 1.5
+    # segfaults. TRY(ST_GeomFromText(...)) in CTE subqueries gets inlined by
+    # the optimizer, causing repeated re-evaluation when downstream metadata
+    # queries (ST_GeometryType, ST_XMin, etc.) wrap the query. Materializing
+    # parses CSV once and eliminates the unsafe TRY() re-evaluation.
+    if skip_invalid and geom_info["type"] == "wkt":
+        con.execute(f"CREATE OR REPLACE TEMP TABLE _gpio_csv_parsed AS {query}")
+        query = "SELECT * FROM _gpio_csv_parsed"
+
+    return query
 
 
 def _convert_spatial_path(
@@ -881,11 +898,18 @@ def _read_csv_to_arrow(
     if geom_info["type"] == "wkt":
         wkt_col = _quote_identifier(geom_info["wkt_column"])
         if skip_invalid:
+            # Use a CTE to evaluate TRY(ST_GeomFromText(...)) once, avoiding
+            # repeated re-evaluation that can segfault in DuckDB 1.5.
             query = f"""
-                SELECT * EXCLUDE ({wkt_col}),
-                       ST_AsWKB(TRY(ST_GeomFromText({wkt_col}))) AS geometry
-                FROM {csv_read}
-                WHERE TRY(ST_GeomFromText({wkt_col})) IS NOT NULL
+                WITH _parsed AS (
+                    SELECT * EXCLUDE ({wkt_col}),
+                           TRY(ST_GeomFromText({wkt_col})) AS _geom
+                    FROM {csv_read}
+                )
+                SELECT * EXCLUDE (_geom),
+                       ST_AsWKB(_geom) AS geometry
+                FROM _parsed
+                WHERE _geom IS NOT NULL
             """
         else:
             query = f"""
