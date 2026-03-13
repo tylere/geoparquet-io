@@ -585,6 +585,7 @@ def write_format(
             output_path,
             include_wkt=format_options.get("include_wkt", True),
             include_bbox=format_options.get("include_bbox", True),
+            overwrite=format_options.get("overwrite", False),
             verbose=verbose,
             profile=profile,
         )
@@ -597,6 +598,7 @@ def write_format(
             id_field=format_options.get("id_field"),
             pretty=format_options.get("pretty", False),
             keep_crs=format_options.get("keep_crs", False),
+            overwrite=format_options.get("overwrite", False),
             verbose=verbose,
             profile=profile,
         )

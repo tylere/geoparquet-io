@@ -1383,6 +1383,7 @@ def convert_reproject(
 @convert.command(name="geojson", cls=SingleFileCommand)
 @click.argument("input_file")
 @click.argument("output_file", type=click.Path(), required=False, default=None)
+@overwrite_option
 @click.option(
     "--no-rs",
     is_flag=True,
@@ -1433,6 +1434,7 @@ def convert_reproject(
 def convert_geojson(
     input_file,
     output_file,
+    overwrite,
     no_rs,
     precision,
     write_bbox,
@@ -1499,6 +1501,7 @@ def convert_geojson(
                 id_field=id_field,
                 pretty=pretty,
                 keep_crs=keep_crs,
+                overwrite=overwrite,
                 verbose=verbose,
                 profile=aws_profile,
             )
@@ -1588,12 +1591,14 @@ def convert_geopackage(
 @convert.command(name="flatgeobuf", cls=SingleFileCommand)
 @click.argument("input_file")
 @click.argument("output_file", type=click.Path(), required=False, default=None)
+@overwrite_option
 @verbose_option
 @aws_profile_option
 @show_sql_option
 def convert_flatgeobuf(
     input_file,
     output_file,
+    overwrite,
     verbose,
     aws_profile,
     show_sql,
@@ -1625,6 +1630,7 @@ def convert_flatgeobuf(
         write_flatgeobuf(
             input_path=input_file,
             output_path=output_file,
+            overwrite=overwrite,
             verbose=verbose,
             profile=aws_profile,
         )
@@ -1635,6 +1641,7 @@ def convert_flatgeobuf(
 @convert.command(name="csv", cls=SingleFileCommand)
 @click.argument("input_file")
 @click.argument("output_file", type=click.Path(), required=False, default=None)
+@overwrite_option
 @click.option(
     "--no-wkt",
     is_flag=True,
@@ -1651,6 +1658,7 @@ def convert_flatgeobuf(
 def convert_csv(
     input_file,
     output_file,
+    overwrite,
     no_wkt,
     no_bbox,
     verbose,
@@ -1691,6 +1699,7 @@ def convert_csv(
             output_path=output_file,
             include_wkt=not no_wkt,
             include_bbox=not no_bbox,
+            overwrite=overwrite,
             verbose=verbose,
             profile=aws_profile,
         )

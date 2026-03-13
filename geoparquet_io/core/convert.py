@@ -922,7 +922,6 @@ def _read_csv_to_arrow(
     )
     if geom_info is None:
         warn("No geometry columns found in CSV/TSV. Reading as plain table.")
-        csv_read = _build_csv_read_expr(input_url, delimiter)
         return None
 
     # Validate geometry
