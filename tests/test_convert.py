@@ -971,3 +971,29 @@ class TestConvertNoGeometry:
         metadata, _ = get_parquet_metadata(temp_output_file, verbose=False)
         geo_meta = parse_geo_metadata(metadata, verbose=False)
         assert geo_meta is not None, "Expected GeoParquet metadata for geo file"
+
+    def test_build_plain_select_query_uses_correct_reader(self):
+        """Verify _build_plain_select_query uses correct reader for each file type."""
+        from geoparquet_io.core.convert import _build_plain_select_query
+
+        # Parquet files should use read_parquet
+        parquet_query = _build_plain_select_query("data.parquet", is_parquet=True)
+        assert "read_parquet" in parquet_query
+        assert "read_csv" not in parquet_query
+        assert "ST_Read" not in parquet_query
+
+        # CSV files should use read_csv
+        csv_query = _build_plain_select_query("data.csv", is_csv=True)
+        assert "read_csv" in csv_query
+        assert "read_parquet" not in csv_query
+        assert "ST_Read" not in csv_query
+
+        # Spatial files (non-parquet, non-csv) should use ST_Read
+        geojson_query = _build_plain_select_query("data.geojson", is_parquet=False, is_csv=False)
+        assert "ST_Read" in geojson_query
+        assert "read_csv" not in geojson_query
+        assert "read_parquet" not in geojson_query
+
+        # Shapefile should also use ST_Read
+        shp_query = _build_plain_select_query("data.shp", is_parquet=False, is_csv=False)
+        assert "ST_Read" in shp_query

@@ -542,12 +542,25 @@ def _calculate_csv_bounds(con, geom_info, skip_invalid, verbose):
     return bounds_result
 
 
-def _build_plain_select_query(input_file, is_parquet=False, delimiter=None):
-    """Build a SELECT * query for non-geometry file conversion."""
+def _build_plain_select_query(input_file, is_parquet=False, is_csv=False, delimiter=None):
+    """Build a SELECT * query for non-geometry file conversion.
+
+    Args:
+        input_file: Path to input file
+        is_parquet: True if input is a parquet file
+        is_csv: True if input is a CSV/TSV file
+        delimiter: CSV delimiter (only used if is_csv=True)
+
+    Returns:
+        SQL SELECT query string
+    """
     if is_parquet:
         return f"SELECT * FROM read_parquet('{input_file}')"
-    csv_read = _build_csv_read_expr(input_file, delimiter)
-    return f"SELECT * FROM {csv_read}"
+    if is_csv:
+        csv_read = _build_csv_read_expr(input_file, delimiter)
+        return f"SELECT * FROM {csv_read}"
+    # Spatial formats (GeoJSON, Shapefile, GeoPackage, etc.) - use ST_Read
+    return f"SELECT * FROM ST_Read('{input_file}')"
 
 
 def _build_conversion_query(
@@ -886,9 +899,11 @@ def read_spatial_to_arrow(
         if arrow_table is None:
             if is_parquet:
                 table_expr = f"read_parquet('{input_url}')"
+            elif is_csv:
+                table_expr = _build_csv_read_expr(input_url, delimiter)
             else:
-                csv_read = _build_csv_read_expr(input_url, delimiter)
-                table_expr = csv_read
+                # Spatial formats (GeoJSON, Shapefile, GeoPackage, etc.)
+                table_expr = f"ST_Read('{input_url}')"
             arrow_table = con.execute(f"SELECT * FROM {table_expr}").fetch_arrow_table()
             return arrow_table, None, None
 
@@ -1174,7 +1189,9 @@ def convert_to_geoparquet(
                 "No geometry column detected. "
                 "Converting as plain Parquet without GeoParquet metadata."
             )
-            query = _build_plain_select_query(input_url, is_parquet=is_parquet, delimiter=delimiter)
+            query = _build_plain_select_query(
+                input_url, is_parquet=is_parquet, is_csv=is_csv, delimiter=delimiter
+            )
             geoparquet_version = "parquet-geo-only"
             effective_crs = None
 
