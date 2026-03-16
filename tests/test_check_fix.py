@@ -335,3 +335,107 @@ class TestCheckFixOptions:
         assert len(fixed_table) == original_row_count
         # All original columns should be present (may have added bbox)
         assert original_columns.issubset(set(fixed_table.column_names))
+
+
+class TestCheckFixMultipleFiles:
+    """Tests for check --fix with multiple files."""
+
+    def test_fix_multiple_files_row_groups(self, places_test_file, temp_output_dir):
+        """Test that --fix works with multiple files for row-group check."""
+
+        # Create a partition directory with multiple files
+        partition_dir = os.path.join(temp_output_dir, "partition")
+        os.makedirs(partition_dir)
+
+        # Create 3 files with suboptimal row groups
+        table = pq.read_table(places_test_file)
+        for i in range(3):
+            file_path = os.path.join(partition_dir, f"part{i}.parquet")
+            # Write with small row groups (suboptimal)
+            pq.write_table(table, file_path, compression="SNAPPY", row_group_size=10)
+
+        # Apply fix to all files
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["check", "row-group", partition_dir, "--all-files", "--fix"],
+        )
+
+        assert result.exit_code == 0
+        # Should not show the "only available for single files" warning
+        assert "only available for single files" not in result.output
+
+        # Verify all files were fixed (should have .bak backups)
+        for i in range(3):
+            file_path = os.path.join(partition_dir, f"part{i}.parquet")
+            backup_path = file_path + ".bak"
+            assert os.path.exists(backup_path), f"Backup not created for part{i}"
+
+            # Verify the file was actually fixed (compression changed)
+            metadata = pq.read_metadata(file_path)
+            # ZSTD compression should be applied
+            assert "ZSTD" in str(metadata.row_group(0).column(0).compression)
+
+    def test_fix_multiple_files_some_optimal(self, places_test_file, temp_output_dir):
+        """Test that --fix skips optimal files and fixes only suboptimal ones."""
+        # Create a partition directory
+        partition_dir = os.path.join(temp_output_dir, "partition")
+        os.makedirs(partition_dir)
+
+        table = pq.read_table(places_test_file)
+
+        # Create file 1: already optimal (ZSTD, good row groups)
+        file1 = os.path.join(partition_dir, "part0.parquet")
+        pq.write_table(table, file1, compression="ZSTD", row_group_size=100000)
+
+        # Create file 2: suboptimal (small row groups)
+        file2 = os.path.join(partition_dir, "part1.parquet")
+        pq.write_table(table, file2, compression="ZSTD", row_group_size=10)
+
+        # Create file 3: suboptimal (small row groups)
+        file3 = os.path.join(partition_dir, "part2.parquet")
+        pq.write_table(table, file3, compression="ZSTD", row_group_size=10)
+
+        # Apply fix
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["check", "row-group", partition_dir, "--all-files", "--fix"],
+        )
+
+        assert result.exit_code == 0
+
+        # File 1 should NOT have a backup (was optimal)
+        assert not os.path.exists(file1 + ".bak")
+
+        # Files 2 and 3 should have backups (were fixed)
+        assert os.path.exists(file2 + ".bak")
+        assert os.path.exists(file3 + ".bak")
+
+    def test_fix_multiple_files_compression(self, places_test_file, temp_output_dir):
+        """Test compression --fix with multiple files."""
+        partition_dir = os.path.join(temp_output_dir, "partition")
+        os.makedirs(partition_dir)
+
+        table = pq.read_table(places_test_file)
+
+        # Create 2 files with SNAPPY compression
+        for i in range(2):
+            file_path = os.path.join(partition_dir, f"part{i}.parquet")
+            pq.write_table(table, file_path, compression="SNAPPY")
+
+        # Apply compression fix
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["check", "compression", partition_dir, "--all-files", "--fix"],
+        )
+
+        assert result.exit_code == 0
+
+        # Verify both files were re-compressed with ZSTD
+        for i in range(2):
+            file_path = os.path.join(partition_dir, f"part{i}.parquet")
+            metadata = pq.read_metadata(file_path)
+            assert "ZSTD" in str(metadata.row_group(0).column(0).compression)
+            assert os.path.exists(file_path + ".bak")
