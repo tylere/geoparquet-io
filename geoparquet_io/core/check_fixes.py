@@ -42,6 +42,13 @@ def fix_compression(
     if verbose:
         debug("Applying ZSTD compression...")
 
+    # Delete output file if it exists (DuckDB won't overwrite)
+    # Note: check --fix creates backup before calling this, so it's safe to delete
+    from pathlib import Path
+
+    if output_file and Path(output_file).exists():
+        Path(output_file).unlink()
+
     # Setup AWS profile if needed
     setup_aws_profile_if_needed(profile, parquet_file, output_file)
 
@@ -56,7 +63,8 @@ def fix_compression(
     con = get_duckdb_connection(load_spatial=True, load_httpfs=needs_httpfs(parquet_file))
 
     try:
-        query = f"SELECT * FROM '{safe_url}'"
+        # Preserve row order from input file (important after Hilbert sorting)
+        query = f"SELECT * FROM read_parquet('{safe_url}', hive_partitioning=false)"
 
         write_parquet_with_metadata(
             con=con,
@@ -462,6 +470,11 @@ def _apply_compression_fix(check_results, current_file, output_file, gp_version,
         if current_file != output_file:
             if verbose:
                 debug("\nMoving to final output location...")
+            # Delete output file if it exists (for in-place operations with backup)
+            from pathlib import Path
+
+            if Path(output_file).exists():
+                Path(output_file).unlink()
             shutil.move(current_file, output_file)
         return []
 
