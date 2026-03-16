@@ -469,7 +469,7 @@ def add_admin_divisions_multi(
         no_cache: Skip local cache and use remote dataset directly
     """
     # Check if output file exists and handle overwrite (fixes issue #278)
-    handle_output_overwrite(output_parquet, overwrite)
+    handle_output_overwrite(output_parquet, overwrite, input_parquet)
 
     # Check for partition input (not supported)
     require_single_file(input_parquet, "add admin-divisions")
