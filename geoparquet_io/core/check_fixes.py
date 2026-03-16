@@ -430,7 +430,11 @@ def _apply_spatial_ordering_fix(check_results, current_file, temp_files, verbose
     if not spatial_result or not spatial_result.get("fix_available", False):
         return current_file, []
 
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet").name
+    # Generate temp file path without creating the file (fixes issue #278)
+    # Use mkstemp to get unique name, then close and delete to avoid collision
+    fd, temp_file = tempfile.mkstemp(suffix=".parquet")
+    os.close(fd)
+    os.unlink(temp_file)
     temp_files.append(temp_file)
 
     if verbose:

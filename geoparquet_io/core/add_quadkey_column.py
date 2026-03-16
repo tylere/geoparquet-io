@@ -492,6 +492,14 @@ def _add_quadkey_file_based(
                 f"Output file already exists: {output_parquet}\nUse --overwrite to replace it."
             )
 
+    # Delete existing file if overwrite=True (fixes issue #278)
+    if output_parquet and overwrite:
+        from pathlib import Path
+
+        output_path = Path(output_parquet)
+        if output_path.exists():
+            output_path.unlink()
+
     # Validate resolution
     if not 0 <= resolution <= 23:
         raise click.BadParameter(f"Resolution must be between 0 and 23, got {resolution}")

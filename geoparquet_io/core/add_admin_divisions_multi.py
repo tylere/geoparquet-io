@@ -478,6 +478,14 @@ def add_admin_divisions_multi(
                 f"Output file already exists: {output_parquet}\nUse --overwrite to replace it."
             )
 
+    # Delete existing file if overwrite=True (fixes issue #278)
+    if output_parquet and overwrite:
+        from pathlib import Path
+
+        output_path = Path(output_parquet)
+        if output_path.exists():
+            output_path.unlink()
+
     # Check for partition input (not supported)
     require_single_file(input_parquet, "add admin-divisions")
 

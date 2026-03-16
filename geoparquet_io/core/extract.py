@@ -1077,12 +1077,15 @@ def _check_overwrite_safety(
     overwrite: bool,
 ) -> None:
     """Check if output file exists and raise error if overwrite not allowed."""
-    if not output_parquet or is_streaming or dry_run or overwrite:
+    if not output_parquet or is_streaming or dry_run:
         return
-    if Path(output_parquet).exists():
+    if not overwrite and Path(output_parquet).exists():
         raise click.ClickException(
             f"Output file already exists: {output_parquet}\nUse --overwrite to replace it."
         )
+    # Delete existing file if overwrite=True (fixes issue #278)
+    if overwrite and Path(output_parquet).exists():
+        Path(output_parquet).unlink()
 
 
 def _validate_column_overlap(

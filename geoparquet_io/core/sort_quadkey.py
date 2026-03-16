@@ -157,6 +157,14 @@ def sort_by_quadkey(
                 f"Output file already exists: {output_parquet}\nUse --overwrite to replace it."
             )
 
+    # Delete existing file if overwrite=True (fixes issue #278)
+    if output_parquet and overwrite:
+        from pathlib import Path
+
+        output_path = Path(output_parquet)
+        if output_path.exists():
+            output_path.unlink()
+
     # Validate profile is only used with S3
     validate_profile_for_urls(profile, input_parquet, output_parquet)
 

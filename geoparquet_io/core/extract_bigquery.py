@@ -741,6 +741,14 @@ def extract_bigquery(
                 f"Output file already exists: {output_parquet}\nUse --overwrite to replace it."
             )
 
+    # Delete existing file if overwrite=True (fixes issue #278)
+    if output_parquet and overwrite and not dry_run:
+        from pathlib import Path
+
+        output_path = Path(output_parquet)
+        if output_path.exists():
+            output_path.unlink()
+
     # Handle dry_run without connecting to BigQuery
     if dry_run:
         _handle_dry_run(
