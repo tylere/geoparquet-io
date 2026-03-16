@@ -213,7 +213,8 @@ def check_row_groups(
         "row_status": row_status,
         "issues": issues,
         "recommendations": recommendations,
-        "fix_available": not passed,
+        # Only offer fix if row count needs optimization (we fix by row count, not size)
+        "fix_available": row_status != "optimal",
     }
 
     # Print results (skip if quiet mode)
