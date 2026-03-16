@@ -476,11 +476,19 @@ def check_all(
         click.echo(click.style("No parquet files found", fg="red"))
         return
 
-    # For partitions, disable fix mode (requires single file)
-    if len(files_to_check) > 1 and fix:
-        click.echo(click.style("⚠️  --fix is only available for single files", fg="yellow"))
-        click.echo("Use 'gpio extract' to consolidate partitions first, then run check --fix")
-        fix = False
+    # Validate fix_output for multi-file operations
+    if fix and fix_output and len(files_to_check) > 1:
+        from pathlib import Path
+
+        fix_path = Path(fix_output)
+        if not fix_path.is_dir():
+            raise click.ClickException(
+                f"When fixing multiple files ({len(files_to_check)} files), "
+                f"--fix-output must be a directory, not a file path.\n"
+                f"Either:\n"
+                f"  1. Specify a directory: --fix-output /path/to/output_dir/\n"
+                f"  2. Omit --fix-output to fix files in-place (with .bak backups)"
+            )
 
     # Create runner for multi-file progress tracking
     runner = MultiFileCheckRunner(files_to_check, verbose=verbose)
@@ -513,14 +521,13 @@ def check_all(
             return_results=True,
             quiet=quiet,
         )
-        ratio = spatial_result["ratio"]
 
         from geoparquet_io.cli.fix_helpers import (
             aggregate_check_results,
             display_spatial_result,
         )
 
-        display_spatial_result(ratio, show_output)
+        display_spatial_result(spatial_result, show_output)
 
         # Run spec validation
         from geoparquet_io.core.validate import validate_geoparquet
@@ -572,15 +579,24 @@ def check_all(
             file_path, {"passed": combined_passed, "issues": combined_issues, **structure_results}
         )
 
-        # If --fix flag is set, apply fixes (only for single files)
+        # If --fix flag is set, apply fixes
         if fix:
+            from pathlib import Path
+
             from geoparquet_io.cli.fix_helpers import apply_check_all_fixes
+
+            # If fix_output is a directory, generate per-file output path
+            per_file_output = fix_output
+            if fix_output and Path(fix_output).is_dir():
+                # Extract filename from file_path and place in output directory
+                filename = Path(file_path).name
+                per_file_output = str(Path(fix_output) / filename)
 
             all_results = {**structure_results, "spatial": spatial_result}
             applied = apply_check_all_fixes(
                 file_path=file_path,
                 all_results=all_results,
-                fix_output=fix_output,
+                fix_output=per_file_output,
                 no_backup=no_backup,
                 overwrite=overwrite,
                 verbose=verbose,
@@ -591,7 +607,7 @@ def check_all(
                 limit_rows=limit_rows,
             )
             if not applied:
-                return
+                continue
 
     # Print summary for multi-file checks
     runner.print_summary()
@@ -653,11 +669,6 @@ def check_spatial(
         click.echo(click.style("No parquet files found", fg="red"))
         return
 
-    # For partitions, disable fix mode
-    if len(files_to_check) > 1 and fix:
-        click.echo(click.style("⚠️  --fix is only available for single files", fg="yellow"))
-        fix = False
-
     # Create runner for multi-file progress tracking
     runner = MultiFileCheckRunner(files_to_check, verbose=verbose)
 
@@ -675,9 +686,10 @@ def check_spatial(
             quiet=quiet,
         )
         ratio = result["ratio"]
+        passed = result.get("passed", ratio < 0.5 if ratio is not None else True)
 
         if show_output and ratio is not None:
-            if ratio < 0.5:
+            if passed:
                 click.echo(click.style("✓ Data appears to be spatially ordered", fg="green"))
             else:
                 click.echo(
@@ -693,20 +705,23 @@ def check_spatial(
 
         if fix:
             if not result.get("fix_available", False):
-                click.echo(
-                    click.style("\n✓ No fix needed - already spatially ordered!", fg="green")
-                )
-                return
+                if show_output:
+                    click.echo(
+                        click.style("\n✓ No fix needed - already spatially ordered!", fg="green")
+                    )
+                continue
 
-            click.echo("\nApplying Hilbert spatial ordering...")
+            if show_output:
+                click.echo("\nApplying Hilbert spatial ordering...")
             output_path, backup_path = handle_fix_common(
                 file_path, fix_output, no_backup, fix_spatial_ordering, verbose, False, None
             )
 
-            click.echo(click.style("\n✓ Spatial ordering applied successfully!", fg="green"))
-            click.echo(f"Optimized file: {output_path}")
-            if backup_path:
-                click.echo(f"Backup: {backup_path}")
+            if show_output:
+                click.echo(click.style("\n✓ Spatial ordering applied successfully!", fg="green"))
+                click.echo(f"Optimized file: {output_path}")
+                if backup_path:
+                    click.echo(f"Backup: {backup_path}")
 
     # Print summary for multi-file checks
     runner.print_summary()
@@ -757,11 +772,6 @@ def check_compression_cmd(
         click.echo(click.style("No parquet files found", fg="red"))
         return
 
-    # For partitions, disable fix mode
-    if len(files_to_check) > 1 and fix:
-        click.echo(click.style("⚠️  --fix is only available for single files", fg="yellow"))
-        fix = False
-
     # Create runner for multi-file progress tracking
     runner = MultiFileCheckRunner(files_to_check, verbose=verbose)
 
@@ -779,18 +789,21 @@ def check_compression_cmd(
 
         if fix:
             if not result.get("fix_available", False):
-                click.echo(click.style("\n✓ No fix needed - already using ZSTD!", fg="green"))
-                return
+                if show_output:
+                    click.echo(click.style("\n✓ No fix needed - already using ZSTD!", fg="green"))
+                continue
 
-            click.echo("\nRe-compressing with ZSTD...")
+            if show_output:
+                click.echo("\nRe-compressing with ZSTD...")
             output_path, backup_path = handle_fix_common(
                 file_path, fix_output, no_backup, fix_compression, verbose, overwrite, None
             )
 
-            click.echo(click.style("\n✓ Compression optimized successfully!", fg="green"))
-            click.echo(f"Optimized file: {output_path}")
-            if backup_path:
-                click.echo(f"Backup: {backup_path}")
+            if show_output:
+                click.echo(click.style("\n✓ Compression optimized successfully!", fg="green"))
+                click.echo(f"Optimized file: {output_path}")
+                if backup_path:
+                    click.echo(f"Backup: {backup_path}")
 
     # Print summary for multi-file checks
     runner.print_summary()
@@ -846,11 +859,6 @@ def check_bbox_cmd(
         click.echo(click.style("No parquet files found", fg="red"))
         return
 
-    # For partitions, disable fix mode
-    if len(files_to_check) > 1 and fix:
-        click.echo(click.style("⚠️  --fix is only available for single files", fg="yellow"))
-        fix = False
-
     # Create runner for multi-file progress tracking
     runner = MultiFileCheckRunner(files_to_check, verbose=verbose)
 
@@ -868,8 +876,9 @@ def check_bbox_cmd(
 
         if fix:
             if not result.get("fix_available", False):
-                click.echo(click.style("\n✓ No fix needed - bbox is optimal!", fg="green"))
-                return
+                if show_output:
+                    click.echo(click.style("\n✓ No fix needed - bbox is optimal!", fg="green"))
+                continue
 
             # Check if this is a removal (v2/parquet-geo-only) or addition (v1.x)
             if result.get("needs_bbox_removal", False):
@@ -887,10 +896,11 @@ def check_bbox_cmd(
                     file_path, fix_output, no_backup, bbox_fix_func, verbose, overwrite, None
                 )
 
-                click.echo(click.style("\n✓ Bbox column removed successfully!", fg="green"))
-                click.echo(f"Optimized file: {output_path}")
-                if backup_path:
-                    click.echo(f"Backup: {backup_path}")
+                if show_output:
+                    click.echo(click.style("\n✓ Bbox column removed successfully!", fg="green"))
+                    click.echo(f"Optimized file: {output_path}")
+                    if backup_path:
+                        click.echo(f"Backup: {backup_path}")
             else:
                 # V1.x: add bbox column/metadata (existing logic)
                 needs_column = result.get("needs_bbox_column", False)
@@ -917,10 +927,11 @@ def check_bbox_cmd(
                     file_path, fix_output, no_backup, bbox_fix_func, verbose, overwrite, None
                 )
 
-                click.echo(click.style("\n✓ Bbox optimized successfully!", fg="green"))
-                click.echo(f"Optimized file: {output_path}")
-                if backup_path:
-                    click.echo(f"Backup: {backup_path}")
+                if show_output:
+                    click.echo(click.style("\n✓ Bbox optimized successfully!", fg="green"))
+                    click.echo(f"Optimized file: {output_path}")
+                    if backup_path:
+                        click.echo(f"Backup: {backup_path}")
 
     # Print summary for multi-file checks
     runner.print_summary()
@@ -979,11 +990,6 @@ def check_row_group_cmd(
         click.echo(click.style("No parquet files found", fg="red"))
         return
 
-    # For partitions, disable fix mode
-    if len(files_to_check) > 1 and fix:
-        click.echo(click.style("⚠️  --fix is only available for single files", fg="yellow"))
-        fix = False
-
     # Create runner for multi-file progress tracking
     runner = MultiFileCheckRunner(files_to_check, verbose=verbose)
 
@@ -1001,18 +1007,23 @@ def check_row_group_cmd(
 
         if fix:
             if not result.get("fix_available", False):
-                click.echo(click.style("\n✓ No fix needed - row groups are optimal!", fg="green"))
-                return
+                if show_output:
+                    click.echo(
+                        click.style("\n✓ No fix needed - row groups are optimal!", fg="green")
+                    )
+                continue
 
-            click.echo("\nOptimizing row groups...")
+            if show_output:
+                click.echo("\nOptimizing row groups...")
             output_path, backup_path = handle_fix_common(
                 file_path, fix_output, no_backup, fix_row_groups, verbose, overwrite, None
             )
 
-            click.echo(click.style("\n✓ Row groups optimized successfully!", fg="green"))
-            click.echo(f"Optimized file: {output_path}")
-            if backup_path:
-                click.echo(f"Backup: {backup_path}")
+            if show_output:
+                click.echo(click.style("\n✓ Row groups optimized successfully!", fg="green"))
+                click.echo(f"Optimized file: {output_path}")
+                if backup_path:
+                    click.echo(f"Backup: {backup_path}")
 
     # Print summary for multi-file checks
     runner.print_summary()

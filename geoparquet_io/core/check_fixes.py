@@ -16,6 +16,7 @@ from geoparquet_io.core.common import (
     get_remote_error_hint,
     is_remote_url,
     needs_httpfs,
+    remote_write_context,
     safe_file_url,
     setup_aws_profile_if_needed,
     write_parquet_with_metadata,
@@ -42,8 +43,29 @@ def fix_compression(
     if verbose:
         debug("Applying ZSTD compression...")
 
+    # Handle in-place operations: use temp file if input == output
+    import tempfile
+    from pathlib import Path
+
+    actual_output = output_file
+    temp_output_file = None
+    is_inplace = parquet_file == output_file
+    is_remote_output = is_remote_url(output_file)
+
+    if is_inplace:
+        # In-place operation: write to temp file first, then move/upload
+        fd, temp_output_file = tempfile.mkstemp(suffix=".parquet")
+        os.close(fd)
+        os.unlink(temp_output_file)
+        actual_output = temp_output_file
+    elif output_file and not is_remote_output and Path(output_file).exists():
+        # Different local files: safe to delete output
+        Path(output_file).unlink()
+
     # Setup AWS profile if needed
-    setup_aws_profile_if_needed(profile, parquet_file, output_file)
+    setup_aws_profile_if_needed(
+        profile, parquet_file, actual_output if not is_remote_output else output_file
+    )
 
     safe_url = safe_file_url(parquet_file, verbose)
 
@@ -56,12 +78,13 @@ def fix_compression(
     con = get_duckdb_connection(load_spatial=True, load_httpfs=needs_httpfs(parquet_file))
 
     try:
-        query = f"SELECT * FROM '{safe_url}'"
+        # Preserve row order from input file (important after Hilbert sorting)
+        query = f"SELECT * FROM read_parquet('{safe_url}', hive_partitioning=false)"
 
         write_parquet_with_metadata(
             con=con,
             query=query,
-            output_file=output_file,
+            output_file=actual_output,
             original_metadata=original_metadata,
             compression="ZSTD",
             compression_level=15,
@@ -70,6 +93,24 @@ def fix_compression(
             profile=profile,
             geoparquet_version=geoparquet_version,
         )
+
+        # If we used a temp file for in-place operation, move/upload it to final location
+        if temp_output_file:
+            if is_remote_output:
+                # Remote output: upload temp file
+                with remote_write_context(output_file, profile=profile) as remote_path:
+                    import shutil
+
+                    shutil.copy2(temp_output_file, remote_path)
+                # Clean up temp file
+                Path(temp_output_file).unlink()
+            else:
+                # Local output: move temp file
+                import shutil
+
+                if Path(output_file).exists():
+                    Path(output_file).unlink()
+                shutil.move(actual_output, output_file)
 
         return {"fix_applied": "Re-compressed with ZSTD", "success": True}
     except duckdb.IOException as e:
@@ -462,6 +503,14 @@ def _apply_compression_fix(check_results, current_file, output_file, gp_version,
         if current_file != output_file:
             if verbose:
                 debug("\nMoving to final output location...")
+            # Delete output file if it exists (for in-place operations with backup)
+            from pathlib import Path
+
+            if (
+                Path(output_file).exists()
+                and Path(current_file).resolve() != Path(output_file).resolve()
+            ):
+                Path(output_file).unlink()
             shutil.move(current_file, output_file)
         return []
 
