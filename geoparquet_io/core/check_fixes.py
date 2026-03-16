@@ -42,15 +42,25 @@ def fix_compression(
     if verbose:
         debug("Applying ZSTD compression...")
 
-    # Delete output file if it exists (DuckDB won't overwrite)
-    # Note: check --fix creates backup before calling this, so it's safe to delete
+    # Handle in-place operations: use temp file if input == output
+    import tempfile
     from pathlib import Path
 
-    if output_file and Path(output_file).exists():
+    actual_output = output_file
+    temp_output_file = None
+
+    if parquet_file == output_file:
+        # In-place operation: write to temp file first, then move
+        fd, temp_output_file = tempfile.mkstemp(suffix=".parquet")
+        os.close(fd)
+        os.unlink(temp_output_file)
+        actual_output = temp_output_file
+    elif output_file and Path(output_file).exists():
+        # Different files: safe to delete output
         Path(output_file).unlink()
 
     # Setup AWS profile if needed
-    setup_aws_profile_if_needed(profile, parquet_file, output_file)
+    setup_aws_profile_if_needed(profile, parquet_file, actual_output)
 
     safe_url = safe_file_url(parquet_file, verbose)
 
@@ -69,7 +79,7 @@ def fix_compression(
         write_parquet_with_metadata(
             con=con,
             query=query,
-            output_file=output_file,
+            output_file=actual_output,
             original_metadata=original_metadata,
             compression="ZSTD",
             compression_level=15,
@@ -78,6 +88,14 @@ def fix_compression(
             profile=profile,
             geoparquet_version=geoparquet_version,
         )
+
+        # If we used a temp file for in-place operation, move it to final location
+        if temp_output_file:
+            import shutil
+
+            if Path(output_file).exists():
+                Path(output_file).unlink()
+            shutil.move(actual_output, output_file)
 
         return {"fix_applied": "Re-compressed with ZSTD", "success": True}
     except duckdb.IOException as e:
@@ -473,7 +491,10 @@ def _apply_compression_fix(check_results, current_file, output_file, gp_version,
             # Delete output file if it exists (for in-place operations with backup)
             from pathlib import Path
 
-            if Path(output_file).exists():
+            if (
+                Path(output_file).exists()
+                and Path(current_file).resolve() != Path(output_file).resolve()
+            ):
                 Path(output_file).unlink()
             shutil.move(current_file, output_file)
         return []

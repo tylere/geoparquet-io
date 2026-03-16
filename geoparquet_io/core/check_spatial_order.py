@@ -170,6 +170,28 @@ def check_spatial_order_bbox_stats(parquet_file, verbose=False, return_results=F
     if verbose:
         debug(f"Analyzing {len(row_group_bboxes)} row groups")
 
+    # Detect if this looks like Hilbert ordering with large row groups
+    # (many row groups with ~100k rows each and high overlap is expected)
+    likely_hilbert_with_large_groups = False
+    if len(row_group_bboxes) >= 10:  # Needs multiple row groups to be meaningful
+        # Check average rows per group from parquet metadata
+        from geoparquet_io.core.common import get_duckdb_connection, needs_httpfs
+
+        con = get_duckdb_connection(load_spatial=False, load_httpfs=needs_httpfs(parquet_file))
+        try:
+            result = con.execute(f"""
+                SELECT num_rows::DOUBLE / num_row_groups as avg_rows
+                FROM parquet_file_metadata('{safe_url}')
+            """).fetchone()
+            avg_rows = result[0] if result else 0
+            # If average row group size is near 100k (our Hilbert default), likely Hilbert-ordered
+            if 80000 <= avg_rows <= 120000:
+                likely_hilbert_with_large_groups = True
+                if verbose:
+                    debug(f"Detected likely Hilbert ordering (avg {avg_rows:.0f} rows/group)")
+        finally:
+            con.close()
+
     # Handle edge cases
     if len(row_group_bboxes) <= 1:
         # Can't meaningfully check ordering with 0 or 1 row groups
@@ -204,8 +226,18 @@ def check_spatial_order_bbox_stats(parquet_file, verbose=False, return_results=F
     issues = []
     recommendations = []
     if not passed:
-        issues.append(f"Poor spatial ordering (overlap ratio: {ratio:.2f})")
-        recommendations.append("Apply Hilbert spatial ordering for better query performance")
+        if likely_hilbert_with_large_groups:
+            # Hilbert ordering with large row groups - high overlap is expected
+            issues.append(
+                f"Row group bboxes overlap (ratio: {ratio:.2f}) - expected with Hilbert ordering and large row groups"
+            )
+            recommendations.append(
+                "Row-level ordering is likely optimal. High row group bbox overlap is "
+                "inherent to space-filling curves with large (100k row) groups."
+            )
+        else:
+            issues.append(f"Poor spatial ordering (overlap ratio: {ratio:.2f})")
+            recommendations.append("Apply Hilbert spatial ordering for better query performance")
 
     # Print standalone results if not quiet and not return_results
     if not quiet and not return_results and not verbose:
@@ -220,7 +252,8 @@ def check_spatial_order_bbox_stats(parquet_file, verbose=False, return_results=F
             "method": "bbox_stats",
             "issues": issues,
             "recommendations": recommendations,
-            "fix_available": not passed,
+            # Don't offer fix if already Hilbert-ordered with large groups
+            "fix_available": not passed and not likely_hilbert_with_large_groups,
         }
 
     return ratio
