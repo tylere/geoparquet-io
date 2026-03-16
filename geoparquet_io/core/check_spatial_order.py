@@ -171,7 +171,7 @@ def check_spatial_order_bbox_stats(parquet_file, verbose=False, return_results=F
         debug(f"Analyzing {len(row_group_bboxes)} row groups")
 
     # Detect if this looks like Hilbert ordering with large row groups
-    # (row groups with ~100k rows each and high overlap is expected)
+    # (row groups with ~100k rows each AND high spatial overlap is expected)
     likely_hilbert_with_large_groups = False
     if len(row_group_bboxes) >= 5:  # Needs multiple row groups to be meaningful
         # Check average rows per group from parquet metadata
@@ -184,11 +184,23 @@ def check_spatial_order_bbox_stats(parquet_file, verbose=False, return_results=F
                 FROM parquet_file_metadata('{safe_url}')
             """).fetchone()
             avg_rows = result[0] if result else 0
-            # If average row group size is near 100k (our Hilbert default), likely Hilbert-ordered
+            # Require BOTH correct row count AND high spatial overlap
+            # (Hilbert curves with large row groups inherently have high bbox overlap)
             if 80000 <= avg_rows <= 120000:
-                likely_hilbert_with_large_groups = True
-                if verbose:
-                    debug(f"Detected likely Hilbert ordering (avg {avg_rows:.0f} rows/group)")
+                # Calculate overlap ratio to confirm spatial characteristic
+                prelim_overlap_count = 0
+                for i in range(len(row_group_bboxes) - 1):
+                    if _bboxes_overlap(row_group_bboxes[i], row_group_bboxes[i + 1]):
+                        prelim_overlap_count += 1
+                prelim_ratio = prelim_overlap_count / (len(row_group_bboxes) - 1)
+
+                # High overlap (>70%) + correct row count = likely Hilbert
+                if prelim_ratio > 0.7:
+                    likely_hilbert_with_large_groups = True
+                    if verbose:
+                        debug(
+                            f"Detected likely Hilbert ordering (avg {avg_rows:.0f} rows/group, {prelim_ratio:.0%} overlap)"
+                        )
         finally:
             con.close()
 

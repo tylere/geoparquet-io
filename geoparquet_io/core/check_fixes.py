@@ -16,6 +16,7 @@ from geoparquet_io.core.common import (
     get_remote_error_hint,
     is_remote_url,
     needs_httpfs,
+    remote_write_context,
     safe_file_url,
     setup_aws_profile_if_needed,
     write_parquet_with_metadata,
@@ -48,19 +49,23 @@ def fix_compression(
 
     actual_output = output_file
     temp_output_file = None
+    is_inplace = parquet_file == output_file
+    is_remote_output = is_remote_url(output_file)
 
-    if parquet_file == output_file:
-        # In-place operation: write to temp file first, then move
+    if is_inplace:
+        # In-place operation: write to temp file first, then move/upload
         fd, temp_output_file = tempfile.mkstemp(suffix=".parquet")
         os.close(fd)
         os.unlink(temp_output_file)
         actual_output = temp_output_file
-    elif output_file and Path(output_file).exists():
-        # Different files: safe to delete output
+    elif output_file and not is_remote_output and Path(output_file).exists():
+        # Different local files: safe to delete output
         Path(output_file).unlink()
 
     # Setup AWS profile if needed
-    setup_aws_profile_if_needed(profile, parquet_file, actual_output)
+    setup_aws_profile_if_needed(
+        profile, parquet_file, actual_output if not is_remote_output else output_file
+    )
 
     safe_url = safe_file_url(parquet_file, verbose)
 
@@ -89,13 +94,23 @@ def fix_compression(
             geoparquet_version=geoparquet_version,
         )
 
-        # If we used a temp file for in-place operation, move it to final location
+        # If we used a temp file for in-place operation, move/upload it to final location
         if temp_output_file:
-            import shutil
+            if is_remote_output:
+                # Remote output: upload temp file
+                with remote_write_context(output_file, profile=profile) as remote_path:
+                    import shutil
 
-            if Path(output_file).exists():
-                Path(output_file).unlink()
-            shutil.move(actual_output, output_file)
+                    shutil.copy2(temp_output_file, remote_path)
+                # Clean up temp file
+                Path(temp_output_file).unlink()
+            else:
+                # Local output: move temp file
+                import shutil
+
+                if Path(output_file).exists():
+                    Path(output_file).unlink()
+                shutil.move(actual_output, output_file)
 
         return {"fix_applied": "Re-compressed with ZSTD", "success": True}
     except duckdb.IOException as e:

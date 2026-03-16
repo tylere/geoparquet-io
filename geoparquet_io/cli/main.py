@@ -476,6 +476,20 @@ def check_all(
         click.echo(click.style("No parquet files found", fg="red"))
         return
 
+    # Validate fix_output for multi-file operations
+    if fix and fix_output and len(files_to_check) > 1:
+        from pathlib import Path
+
+        fix_path = Path(fix_output)
+        if not fix_path.is_dir():
+            raise click.ClickException(
+                f"When fixing multiple files ({len(files_to_check)} files), "
+                f"--fix-output must be a directory, not a file path.\n"
+                f"Either:\n"
+                f"  1. Specify a directory: --fix-output /path/to/output_dir/\n"
+                f"  2. Omit --fix-output to fix files in-place (with .bak backups)"
+            )
+
     # Create runner for multi-file progress tracking
     runner = MultiFileCheckRunner(files_to_check, verbose=verbose)
 
@@ -567,13 +581,22 @@ def check_all(
 
         # If --fix flag is set, apply fixes
         if fix:
+            from pathlib import Path
+
             from geoparquet_io.cli.fix_helpers import apply_check_all_fixes
+
+            # If fix_output is a directory, generate per-file output path
+            per_file_output = fix_output
+            if fix_output and Path(fix_output).is_dir():
+                # Extract filename from file_path and place in output directory
+                filename = Path(file_path).name
+                per_file_output = str(Path(fix_output) / filename)
 
             all_results = {**structure_results, "spatial": spatial_result}
             applied = apply_check_all_fixes(
                 file_path=file_path,
                 all_results=all_results,
-                fix_output=fix_output,
+                fix_output=per_file_output,
                 no_backup=no_backup,
                 overwrite=overwrite,
                 verbose=verbose,
