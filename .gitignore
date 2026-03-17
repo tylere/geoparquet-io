@@ -6,6 +6,10 @@ todos/
 # Context directory - personal notes
 context/personal/notes/
 
+# Docsync cache files
+.docsync/import_graph.json
+.docsync/import_graph.state
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
