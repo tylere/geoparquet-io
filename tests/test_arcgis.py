@@ -254,6 +254,156 @@ class TestCrsExtraction:
         assert result is not None  # Should default to WGS84
 
 
+class TestSchemaBuilding:
+    """Tests for schema building from layer metadata (issue #290)."""
+
+    def test_basic_types(self):
+        """Test mapping of common ArcGIS types to PyArrow types."""
+        from geoparquet_io.core.arcgis import ArcGISLayerInfo, _build_schema_from_layer_info
+
+        layer_info = ArcGISLayerInfo(
+            name="test",
+            geometry_type="esriGeometryPoint",
+            spatial_reference={"wkid": 4326},
+            fields=[
+                {"name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": False},
+                {"name": "int_field", "type": "esriFieldTypeInteger", "nullable": True},
+                {"name": "double_field", "type": "esriFieldTypeDouble", "nullable": True},
+                {"name": "str_field", "type": "esriFieldTypeString", "nullable": True},
+                {"name": "date_field", "type": "esriFieldTypeDate", "nullable": True},
+            ],
+            max_record_count=2000,
+            total_count=100,
+        )
+
+        schema = _build_schema_from_layer_info(layer_info)
+
+        # Check geometry column
+        assert schema.names[0] == "geometry"
+        assert schema.field("geometry").type == pa.binary()
+        assert schema.field("geometry").nullable  # Can be null for features without spatial data
+
+        # Check attribute columns
+        assert schema.field("OBJECTID").type == pa.int64()
+        assert not schema.field("OBJECTID").nullable
+
+        assert schema.field("int_field").type == pa.int32()
+        assert schema.field("int_field").nullable
+
+        assert schema.field("double_field").type == pa.float64()
+        assert schema.field("double_field").nullable
+
+        assert schema.field("str_field").type == pa.string()
+        assert schema.field("str_field").nullable
+
+        assert schema.field("date_field").type == pa.timestamp("ms")
+        assert schema.field("date_field").nullable
+
+    def test_all_numeric_types(self):
+        """Test all numeric type mappings."""
+        from geoparquet_io.core.arcgis import ArcGISLayerInfo, _build_schema_from_layer_info
+
+        layer_info = ArcGISLayerInfo(
+            name="test",
+            geometry_type="esriGeometryPoint",
+            spatial_reference={"wkid": 4326},
+            fields=[
+                {"name": "small_int", "type": "esriFieldTypeSmallInteger", "nullable": True},
+                {"name": "int", "type": "esriFieldTypeInteger", "nullable": True},
+                {"name": "single", "type": "esriFieldTypeSingle", "nullable": True},
+                {"name": "double", "type": "esriFieldTypeDouble", "nullable": True},
+            ],
+            max_record_count=2000,
+            total_count=100,
+        )
+
+        schema = _build_schema_from_layer_info(layer_info)
+
+        assert schema.field("small_int").type == pa.int16()
+        assert schema.field("int").type == pa.int32()
+        assert schema.field("single").type == pa.float32()
+        assert schema.field("double").type == pa.float64()
+
+    def test_special_types(self):
+        """Test GUID, GlobalID, Blob, XML types."""
+        from geoparquet_io.core.arcgis import ArcGISLayerInfo, _build_schema_from_layer_info
+
+        layer_info = ArcGISLayerInfo(
+            name="test",
+            geometry_type="esriGeometryPoint",
+            spatial_reference={"wkid": 4326},
+            fields=[
+                {"name": "guid_field", "type": "esriFieldTypeGUID", "nullable": True},
+                {"name": "globalid", "type": "esriFieldTypeGlobalID", "nullable": False},
+                {"name": "blob_field", "type": "esriFieldTypeBlob", "nullable": True},
+                {"name": "xml_field", "type": "esriFieldTypeXML", "nullable": True},
+            ],
+            max_record_count=2000,
+            total_count=100,
+        )
+
+        schema = _build_schema_from_layer_info(layer_info)
+
+        # GUIDs map to string
+        assert schema.field("guid_field").type == pa.string()
+        assert schema.field("guid_field").nullable
+
+        # GlobalID is non-nullable string
+        assert schema.field("globalid").type == pa.string()
+        assert not schema.field("globalid").nullable
+
+        # Blob maps to binary
+        assert schema.field("blob_field").type == pa.binary()
+        assert schema.field("blob_field").nullable
+
+        # XML maps to string
+        assert schema.field("xml_field").type == pa.string()
+        assert schema.field("xml_field").nullable
+
+    def test_unknown_type_fallback(self):
+        """Test that unknown types fall back to string with warning."""
+        from geoparquet_io.core.arcgis import ArcGISLayerInfo, _build_schema_from_layer_info
+
+        layer_info = ArcGISLayerInfo(
+            name="test",
+            geometry_type="esriGeometryPoint",
+            spatial_reference={"wkid": 4326},
+            fields=[
+                {"name": "unknown_field", "type": "esriFieldTypeUnknown", "nullable": True},
+            ],
+            max_record_count=2000,
+            total_count=100,
+        )
+
+        # Should not raise, should warn and fallback to string
+        schema = _build_schema_from_layer_info(layer_info)
+        assert schema.field("unknown_field").type == pa.string()
+        assert schema.field("unknown_field").nullable
+
+    def test_schema_field_count(self):
+        """Test that schema has correct number of fields (geometry + attributes)."""
+        from geoparquet_io.core.arcgis import ArcGISLayerInfo, _build_schema_from_layer_info
+
+        layer_info = ArcGISLayerInfo(
+            name="test",
+            geometry_type="esriGeometryPoint",
+            spatial_reference={"wkid": 4326},
+            fields=[
+                {"name": "field1", "type": "esriFieldTypeString", "nullable": True},
+                {"name": "field2", "type": "esriFieldTypeInteger", "nullable": True},
+                {"name": "field3", "type": "esriFieldTypeDouble", "nullable": True},
+            ],
+            max_record_count=2000,
+            total_count=100,
+        )
+
+        schema = _build_schema_from_layer_info(layer_info)
+
+        # Should have geometry + 3 fields = 4 total
+        assert len(schema) == 4
+        assert schema.names == ["geometry", "field1", "field2", "field3"]
+
+
 class TestCLI:
     """CLI integration tests."""
 
@@ -386,7 +536,10 @@ class TestStreamingConversion:
             name="Test",
             geometry_type="esriGeometryPoint",
             spatial_reference={"wkid": 4326},
-            fields=[],
+            fields=[
+                {"name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": False},
+                {"name": "name", "type": "esriFieldTypeString", "nullable": True},
+            ],
             max_record_count=1000,
             total_count=3,
         )
@@ -443,7 +596,10 @@ class TestStreamingConversion:
             name="Test",
             geometry_type="esriGeometryPoint",
             spatial_reference={"wkid": 4326},
-            fields=[],
+            fields=[
+                {"name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": False},
+                {"name": "name", "type": "esriFieldTypeString", "nullable": True},
+            ],
             max_record_count=2,
             total_count=3,
         )
@@ -475,7 +631,10 @@ class TestStreamingConversion:
             name="Test",
             geometry_type="esriGeometryPoint",
             spatial_reference={"wkid": 4326},
-            fields=[],
+            fields=[
+                {"name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": False},
+                {"name": "name", "type": "esriFieldTypeString", "nullable": True},
+            ],
             max_record_count=1000,
             total_count=3,
         )
