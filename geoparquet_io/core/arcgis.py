@@ -507,6 +507,15 @@ def fetch_all_features(
     Yields:
         GeoJSON FeatureCollection dicts for each page
     """
+    # Validate max_workers
+    if max_workers < 1:
+        raise ValueError("max_workers must be at least 1")
+    if max_workers > 10:
+        warn(
+            f"max_workers={max_workers} may trigger rate limits. "
+            f"Recommended range: 1-10 (2-3 for best balance)"
+        )
+
     # Determine batch size (respect server limit)
     max_batch = min(
         batch_size or DEFAULT_PAGE_SIZE,
@@ -569,11 +578,12 @@ def fetch_all_features(
         fetched = 0
         batch_start = 0
 
-        while batch_start < total:
-            # Submit max_workers requests in parallel
-            futures = []
+        # Reuse a single thread pool for all batches (more efficient)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            while batch_start < total:
+                # Submit max_workers requests in parallel
+                futures = []
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 for i in range(max_workers):
                     offset = batch_start + (i * max_batch)
                     if offset >= total:
@@ -583,6 +593,7 @@ def fetch_all_features(
                     current_batch = min(max_batch, remaining)
                     end = min(offset + current_batch, total)
 
+                    # Print progress message synchronously (avoid race condition)
                     progress(f"Fetching features {offset + 1}-{end} of {total}...")
 
                     future = executor.submit(
@@ -594,7 +605,7 @@ def fetch_all_features(
                         bbox=bbox,
                         out_fields=out_fields,
                         token=token,
-                        verbose=verbose,
+                        verbose=False,  # Disable per-request verbose to avoid race conditions
                     )
                     futures.append((offset, future))
 
@@ -605,7 +616,8 @@ def fetch_all_features(
                         page = future.result()
                         results.append((offset, page))
                     except Exception as e:
-                        # If one request fails, propagate the error
+                        # If one request fails, propagate the error (fail-fast)
+                        # Retries can be added later if needed
                         raise click.ClickException(
                             f"Failed to fetch features at offset {offset}: {e}"
                         ) from e
@@ -619,15 +631,19 @@ def fetch_all_features(
                     if not features:
                         continue
 
+                    # Check limit before yielding
+                    if max_features is not None and fetched >= max_features:
+                        break
+
                     yield page
                     fetched += len(features)
 
-            # Move to next batch
-            batch_start += max_workers * max_batch
+                # Move to next batch
+                batch_start += max_workers * max_batch
 
-            # Stop if we've hit the user limit
-            if max_features is not None and fetched >= max_features:
-                break
+                # Stop if we've hit the user limit
+                if max_features is not None and fetched >= max_features:
+                    break
 
         if verbose:
             debug(f"Fetched {fetched} features total using {max_workers} workers")
@@ -675,6 +691,7 @@ def _build_schema_from_layer_info(layer_info: ArcGISLayerInfo) -> pa.Schema:
         "esriFieldTypeString": pa.string(),
         "esriFieldTypeDate": pa.timestamp("ms"),
         "esriFieldTypeOID": pa.int64(),
+        "esriFieldTypeGeometry": pa.binary(),  # Shouldn't appear in fields, but handle defensively
         "esriFieldTypeBlob": pa.binary(),
         "esriFieldTypeGUID": pa.string(),
         "esriFieldTypeGlobalID": pa.string(),
@@ -703,10 +720,6 @@ def _build_schema_from_layer_info(layer_info: ArcGISLayerInfo) -> pa.Schema:
                 f"Falling back to string type."
             )
             pa_type = pa.string()
-
-        # GlobalID fields are non-nullable in ArcGIS
-        if field_type == "esriFieldTypeGlobalID":
-            nullable = False
 
         fields.append(pa.field(field_name, pa_type, nullable=nullable))
 
@@ -804,6 +817,18 @@ def _stream_features_to_parquet(
     # Build fixed schema from layer metadata upfront to prevent type mismatches
     # between batches (issue #290)
     target_schema = _build_schema_from_layer_info(layer_info)
+
+    # Filter schema to match requested fields (if out_fields specified)
+    if out_fields != "*":
+        requested_fields = {f.strip().lower() for f in out_fields.split(",")}
+        # Always include geometry
+        filtered_fields = [target_schema.field("geometry")]
+        # Add only requested attribute fields (case-insensitive match)
+        for field in target_schema:
+            if field.name != "geometry" and field.name.lower() in requested_fields:
+                filtered_fields.append(field)
+        target_schema = pa.schema(filtered_fields)
+
     debug(f"Built schema from layer metadata: {len(target_schema)} fields")
 
     writer = None
