@@ -25,12 +25,12 @@ gpio supports plugins that add specialized format support. Install plugins along
 
 ```bash
 # Install with PMTiles support
-uv tool install geoparquet-io --with gpio-pmtiles
-pipx install geoparquet-io --preinstall gpio-pmtiles
+uv tool install --prerelease=allow geoparquet-io --with gpio-pmtiles
+pipx install --pip-args='--pre' geoparquet-io --preinstall gpio-pmtiles
 
 # Add plugin to existing installation
-uv tool install --with gpio-pmtiles geoparquet-io
-pipx inject geoparquet-io gpio-pmtiles
+uv tool install --prerelease=allow --with gpio-pmtiles geoparquet-io
+pipx inject geoparquet-io gpio-pmtiles --pip-args='--pre'
 ```
 
 Available plugins:
