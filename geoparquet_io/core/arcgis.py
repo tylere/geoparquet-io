@@ -484,6 +484,7 @@ def fetch_all_features(
     max_features: int | None = None,
     token: str | None = None,
     batch_size: int | None = None,
+    max_workers: int = 1,
     verbose: bool = False,
 ) -> Generator[dict, None, None]:
     """
@@ -500,6 +501,7 @@ def fetch_all_features(
         max_features: Maximum total features to return (limit)
         token: Optional authentication token
         batch_size: Custom batch size (default: server's maxRecordCount)
+        max_workers: Number of concurrent requests (1 = sequential, 2-3 recommended)
         verbose: Whether to print debug output
 
     Yields:
@@ -516,47 +518,119 @@ def fetch_all_features(
     if max_features is not None:
         total = min(total, max_features)
 
-    offset = 0
-    fetched = 0
+    if max_workers == 1:
+        # Sequential fetching (original behavior)
+        offset = 0
+        fetched = 0
 
-    while offset < total:
-        # Adjust batch size for last page if limit applies
-        remaining = total - offset
-        current_batch = min(max_batch, remaining)
+        while offset < total:
+            # Adjust batch size for last page if limit applies
+            remaining = total - offset
+            current_batch = min(max_batch, remaining)
 
-        end = min(offset + current_batch, total)
-        progress(f"Fetching features {offset + 1}-{end} of {total}...")
+            end = min(offset + current_batch, total)
+            progress(f"Fetching features {offset + 1}-{end} of {total}...")
 
-        page = fetch_features_page(
-            service_url,
-            offset,
-            current_batch,
-            where,
-            bbox=bbox,
-            out_fields=out_fields,
-            token=token,
-            verbose=verbose,
-        )
+            page = fetch_features_page(
+                service_url,
+                offset,
+                current_batch,
+                where,
+                bbox=bbox,
+                out_fields=out_fields,
+                token=token,
+                verbose=verbose,
+            )
 
-        features = page.get("features", [])
-        if not features:
-            break
+            features = page.get("features", [])
+            if not features:
+                break
 
-        yield page
+            yield page
 
-        fetched += len(features)
-        offset += current_batch
+            fetched += len(features)
+            offset += current_batch
 
-        # Safety check: if server returned fewer than expected, adjust
-        if len(features) < current_batch and offset < total:
-            offset = fetched
+            # Safety check: if server returned fewer than expected, adjust
+            if len(features) < current_batch and offset < total:
+                offset = fetched
 
-        # Stop if we've hit the user limit
-        if max_features is not None and fetched >= max_features:
-            break
+            # Stop if we've hit the user limit
+            if max_features is not None and fetched >= max_features:
+                break
 
-    if verbose:
-        debug(f"Fetched {fetched} features total")
+        if verbose:
+            debug(f"Fetched {fetched} features total")
+
+    else:
+        # Parallel fetching with ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor
+
+        fetched = 0
+        batch_start = 0
+
+        while batch_start < total:
+            # Submit max_workers requests in parallel
+            futures = []
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for i in range(max_workers):
+                    offset = batch_start + (i * max_batch)
+                    if offset >= total:
+                        break
+
+                    remaining = total - offset
+                    current_batch = min(max_batch, remaining)
+                    end = min(offset + current_batch, total)
+
+                    progress(f"Fetching features {offset + 1}-{end} of {total}...")
+
+                    future = executor.submit(
+                        fetch_features_page,
+                        service_url,
+                        offset,
+                        current_batch,
+                        where,
+                        bbox=bbox,
+                        out_fields=out_fields,
+                        token=token,
+                        verbose=verbose,
+                    )
+                    futures.append((offset, future))
+
+                # Collect results in order
+                results = []
+                for offset, future in futures:
+                    try:
+                        page = future.result()
+                        results.append((offset, page))
+                    except Exception as e:
+                        # If one request fails, propagate the error
+                        raise click.ClickException(
+                            f"Failed to fetch features at offset {offset}: {e}"
+                        ) from e
+
+                # Sort by offset to maintain order
+                results.sort(key=lambda x: x[0])
+
+                # Yield pages in sequential order
+                for _offset, page in results:
+                    features = page.get("features", [])
+                    if not features:
+                        continue
+
+                    yield page
+                    fetched += len(features)
+
+            # Move to next batch
+            batch_start += max_workers * max_batch
+
+            # Stop if we've hit the user limit
+            if max_features is not None and fetched >= max_features:
+                break
+
+        if verbose:
+            debug(f"Fetched {fetched} features total using {max_workers} workers")
 
 
 def _extract_crs_from_spatial_reference(spatial_ref: dict) -> dict | None:
@@ -576,6 +650,67 @@ def _extract_crs_from_spatial_reference(spatial_ref: dict) -> dict | None:
 
     # Default to WGS84
     return parse_crs_string_to_projjson("EPSG:4326")
+
+
+def _build_schema_from_layer_info(layer_info: ArcGISLayerInfo) -> pa.Schema:
+    """
+    Build a fixed PyArrow schema from ArcGIS layer metadata.
+
+    This prevents schema mismatches when different batches infer different
+    types for the same field (e.g., nulls in batch 1 vs actual values in batch 2).
+
+    Args:
+        layer_info: ArcGIS layer metadata containing field definitions
+
+    Returns:
+        PyArrow schema with geometry column + attribute fields
+    """
+    # Map esriFieldType to PyArrow types
+    # Reference: https://developers.arcgis.com/rest/services-reference/enterprise/fields/
+    TYPE_MAPPING = {
+        "esriFieldTypeSmallInteger": pa.int16(),
+        "esriFieldTypeInteger": pa.int32(),
+        "esriFieldTypeSingle": pa.float32(),
+        "esriFieldTypeDouble": pa.float64(),
+        "esriFieldTypeString": pa.string(),
+        "esriFieldTypeDate": pa.timestamp("ms"),
+        "esriFieldTypeOID": pa.int64(),
+        "esriFieldTypeBlob": pa.binary(),
+        "esriFieldTypeGUID": pa.string(),
+        "esriFieldTypeGlobalID": pa.string(),
+        "esriFieldTypeXML": pa.string(),
+    }
+
+    fields = []
+
+    # Geometry column always comes first (WKB binary)
+    # Some features may have null geometries (attributes without spatial data)
+    fields.append(pa.field("geometry", pa.binary(), nullable=True))
+
+    # Add attribute fields based on layer metadata
+    for field_info in layer_info.fields:
+        field_name = field_info["name"]
+        field_type = field_info["type"]
+        nullable = field_info.get("nullable", True)
+
+        # Map esriFieldType to PyArrow type
+        if field_type in TYPE_MAPPING:
+            pa_type = TYPE_MAPPING[field_type]
+        else:
+            # Unknown type - fallback to string with warning
+            warn(
+                f"Unknown ArcGIS field type '{field_type}' for field '{field_name}'. "
+                f"Falling back to string type."
+            )
+            pa_type = pa.string()
+
+        # GlobalID fields are non-nullable in ArcGIS
+        if field_type == "esriFieldTypeGlobalID":
+            nullable = False
+
+        fields.append(pa.field(field_name, pa_type, nullable=nullable))
+
+    return pa.schema(fields)
 
 
 def _geojson_page_to_table(
@@ -613,10 +748,11 @@ def _geojson_page_to_table(
             f.write(geojson_collection)
 
         # Read GeoJSON and convert geometry to WKB
+        # Note: DuckDB ST_Read adds OGC_FID column, which we exclude
         query = f"""
             SELECT
                 ST_AsWKB(geom) as geometry,
-                * EXCLUDE (geom)
+                * EXCLUDE (geom, OGC_FID)
             FROM ST_Read('{temp_file}')
         """
 
@@ -639,6 +775,7 @@ def _stream_features_to_parquet(
     max_features: int | None = None,
     token: str | None = None,
     batch_size: int | None = None,
+    max_workers: int = 1,
     verbose: bool = False,
 ) -> int:
     """
@@ -658,11 +795,17 @@ def _stream_features_to_parquet(
         max_features: Maximum total features to return (limit)
         token: Optional authentication token
         batch_size: Custom batch size for pagination
+        max_workers: Number of concurrent requests (1 = sequential, 2-3 recommended)
         verbose: Whether to print debug output
 
     Returns:
         Number of features written
     """
+    # Build fixed schema from layer metadata upfront to prevent type mismatches
+    # between batches (issue #290)
+    target_schema = _build_schema_from_layer_info(layer_info)
+    debug(f"Built schema from layer metadata: {len(target_schema)} fields")
+
     writer = None
     total_rows = 0
     page_count = 0
@@ -677,6 +820,7 @@ def _stream_features_to_parquet(
             max_features=max_features,
             token=token,
             batch_size=batch_size,
+            max_workers=max_workers,
             verbose=verbose,
         ):
             features = page.get("features", [])
@@ -690,9 +834,20 @@ def _stream_features_to_parquet(
 
             page_count += 1
 
-            # Initialize writer with schema from first page
+            # Cast to fixed schema (handles type mismatches between batches)
+            try:
+                page_table = page_table.cast(target_schema, safe=True)
+            except pa.ArrowInvalid as e:
+                # If safe casting fails, try to provide helpful error message
+                raise click.ClickException(
+                    f"Failed to cast batch {page_count} to target schema. "
+                    f"This may indicate data corruption or unexpected types from the service. "
+                    f"Error: {e}"
+                ) from e
+
+            # Initialize writer with fixed schema on first page
             if writer is None:
-                writer = pq.ParquetWriter(output_path, page_table.schema)
+                writer = pq.ParquetWriter(output_path, target_schema)
 
             # Write this page
             writer.write_table(page_table)
@@ -718,6 +873,7 @@ def arcgis_to_table(
     exclude_cols: str | None = None,
     limit: int | None = None,
     batch_size: int | None = None,
+    max_workers: int = 1,
     verbose: bool = False,
 ) -> pa.Table:
     """
@@ -745,6 +901,7 @@ def arcgis_to_table(
         exclude_cols: Comma-separated column names to exclude (client-side after download)
         limit: Maximum number of features to return
         batch_size: Custom batch size for pagination
+        max_workers: Number of concurrent requests (1 = sequential, 2-3 recommended)
         verbose: Whether to print debug output
 
     Returns:
@@ -801,6 +958,7 @@ def arcgis_to_table(
             max_features=limit,
             token=token,
             batch_size=batch_size,
+            max_workers=max_workers,
             verbose=verbose,
         )
 
@@ -866,6 +1024,7 @@ def convert_arcgis_to_geoparquet(
     limit: int | None = None,
     skip_hilbert: bool = False,
     skip_bbox: bool = False,
+    max_workers: int = 1,
     compression: str = "ZSTD",
     compression_level: int = 15,
     verbose: bool = False,
@@ -901,6 +1060,7 @@ def convert_arcgis_to_geoparquet(
         limit: Maximum number of features to return
         skip_hilbert: Skip Hilbert spatial ordering
         skip_bbox: Skip adding bbox column for spatial query optimization
+        max_workers: Number of concurrent requests (1 = sequential, 2-3 recommended)
         compression: Compression codec (ZSTD, GZIP, etc.)
         compression_level: Compression level
         verbose: Whether to print verbose output
@@ -940,6 +1100,7 @@ def convert_arcgis_to_geoparquet(
         include_cols=include_cols,
         exclude_cols=exclude_cols,
         limit=limit,
+        max_workers=max_workers,
         verbose=verbose,
     )
 

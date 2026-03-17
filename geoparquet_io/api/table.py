@@ -303,6 +303,7 @@ def extract_arcgis(
     include_cols: str | None = None,
     exclude_cols: str | None = None,
     limit: int | None = None,
+    max_workers: int = 1,
 ) -> Table:
     """
     Extract features from an ArcGIS Feature Service to a Table.
@@ -332,6 +333,7 @@ def extract_arcgis(
         include_cols: Comma-separated column names to include (server-side)
         exclude_cols: Comma-separated column names to exclude (client-side)
         limit: Maximum number of features to return
+        max_workers: Number of concurrent requests (1 = sequential, 2-3 recommended)
 
     Returns:
         Table for chaining operations
@@ -346,6 +348,10 @@ def extract_arcgis(
         >>> # Extract with server-side filtering
         >>> gpio.extract_arcgis(url, bbox=(-122.5, 37.5, -122.0, 38.0), limit=1000) \\
         ...     .add_bbox() \\
+        ...     .write('output.parquet')
+        >>>
+        >>> # Extract large dataset with parallel fetching
+        >>> gpio.extract_arcgis(url, limit=100000, max_workers=3) \\
         ...     .write('output.parquet')
     """
     from geoparquet_io.core.arcgis import ArcGISAuth, arcgis_to_table
@@ -368,6 +374,7 @@ def extract_arcgis(
         include_cols=include_cols,
         exclude_cols=exclude_cols,
         limit=limit,
+        max_workers=max_workers,
         verbose=False,
     )
 

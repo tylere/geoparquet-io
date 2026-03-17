@@ -2262,6 +2262,12 @@ def extract_geoparquet(
     is_flag=True,
     help="Skip adding bbox column (bbox enables faster spatial filtering on remote files)",
 )
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1, max=10),
+    default=1,
+    help="Number of concurrent requests (1-10). Default: 1 (sequential). Values 2-3 recommended for speedup. Higher values may trigger rate limits.",
+)
 @geoparquet_version_option
 @overwrite_option
 @verbose_option
@@ -2285,6 +2291,7 @@ def extract_arcgis(
     limit,
     skip_hilbert,
     skip_bbox,
+    workers,
     geoparquet_version,
     overwrite,
     verbose,
@@ -2390,6 +2397,7 @@ def extract_arcgis(
             limit=limit,
             skip_hilbert=skip_hilbert,
             skip_bbox=skip_bbox,
+            max_workers=workers,
             compression=compression.upper(),
             compression_level=compression_level,
             verbose=verbose,

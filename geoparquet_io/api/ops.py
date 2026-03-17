@@ -685,6 +685,7 @@ def from_arcgis(
     include_cols: str | None = None,
     exclude_cols: str | None = None,
     limit: int | None = None,
+    max_workers: int = 1,
 ) -> pa.Table:
     """
     Fetch ArcGIS Feature Service as a PyArrow Table.
@@ -700,6 +701,7 @@ def from_arcgis(
         include_cols: Comma-separated column names to include (server-side)
         exclude_cols: Comma-separated column names to exclude (client-side)
         limit: Maximum number of features to return
+        max_workers: Number of concurrent requests (1 = sequential, 2-3 recommended)
 
     Returns:
         PyArrow Table with WKB geometry column
@@ -712,6 +714,9 @@ def from_arcgis(
         >>>
         >>> # With server-side filtering
         >>> table = ops.from_arcgis(url, bbox=(-122.5, 37.5, -122.0, 38.0), limit=1000)
+        >>>
+        >>> # With parallel fetching for large datasets
+        >>> table = ops.from_arcgis(url, limit=100000, max_workers=3)
     """
     from geoparquet_io.core.arcgis import ArcGISAuth, arcgis_to_table
 
@@ -724,5 +729,6 @@ def from_arcgis(
         include_cols=include_cols,
         exclude_cols=exclude_cols,
         limit=limit,
+        max_workers=max_workers,
         verbose=False,
     )
