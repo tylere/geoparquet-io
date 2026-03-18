@@ -94,15 +94,15 @@ geoparquet_io/
 
 | Module | Purpose | Lines |
 |--------|---------|-------|
-| `common.py` |  | 4073 |
+| `common.py` |  | 4129 |
 | `validate.py` | GeoParquet file validation against specification r... | 2854 |
 | `inspect_utils.py` | Utilities for inspecting GeoParquet files. | 1548 |
 | `duckdb_metadata.py` | DuckDB-based Parquet metadata extraction. | 1277 |
-| `extract.py` | Extract columns and rows from GeoParquet files. | 1237 |
-| `convert.py` |  | 1189 |
+| `convert.py` |  | 1259 |
+| `extract.py` | Extract columns and rows from GeoParquet files. | 1225 |
+| `arcgis.py` | ArcGIS Feature Service to GeoParquet conversion. | 1161 |
 | `metadata_utils.py` | Utilities for extracting and formatting GeoParquet... | 1077 |
-| `arcgis.py` | ArcGIS Feature Service to GeoParquet conversion. | 975 |
-| `extract_bigquery.py` |  | 915 |
+| `extract_bigquery.py` |  | 934 |
 | `partition_common.py` |  | 908 |
 | `admin_datasets.py` |  | 735 |
 | `benchmark.py` | Benchmark utilities for comparing GeoParquet conve... | 701 |

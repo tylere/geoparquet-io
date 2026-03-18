@@ -143,7 +143,18 @@ class BigQueryConnection:
         self,
         project: str | None = None,
         credentials_file: str | None = None,
+        **kwargs,
     ):
+        if "geography_as_geometry" in kwargs:
+            import warnings
+
+            warnings.warn(
+                "geography_as_geometry is deprecated and ignored in DuckDB 1.5+ — "
+                "GEOGRAPHY maps to GEOMETRY automatically",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         self.project = project
         self.credentials_file = credentials_file
         self._original_creds: str | None = None
@@ -240,6 +251,7 @@ def _setup_bigquery_connection() -> duckdb.DuckDBPyConnection:
 def get_bigquery_connection(
     project: str | None = None,
     credentials_file: str | None = None,
+    **kwargs,
 ) -> duckdb.DuckDBPyConnection:
     """
     Create DuckDB connection with BigQuery extension loaded.
@@ -254,6 +266,16 @@ def get_bigquery_connection(
     Returns:
         Configured DuckDB connection with BigQuery extension
     """
+    if "geography_as_geometry" in kwargs:
+        import warnings
+
+        warnings.warn(
+            "geography_as_geometry is deprecated and ignored in DuckDB 1.5+ — "
+            "GEOGRAPHY maps to GEOMETRY automatically",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     con = _setup_bigquery_connection()
 
     try:
