@@ -904,7 +904,7 @@ def read_spatial_to_arrow(
             else:
                 # Spatial formats (GeoJSON, Shapefile, GeoPackage, etc.)
                 table_expr = f"ST_Read('{input_url}')"
-            arrow_table = con.execute(f"SELECT * FROM {table_expr}").fetch_arrow_table()
+            arrow_table = con.execute(f"SELECT * FROM {table_expr}").arrow().read_all()
             return arrow_table, None, None
 
         return arrow_table, detected_crs, geometry_column
