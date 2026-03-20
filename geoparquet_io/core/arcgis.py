@@ -73,16 +73,65 @@ class ArcGISLayerInfo:
     total_count: int
 
 
-def _get_http_client():
-    """Get HTTP client for making requests."""
-    try:
-        import httpx
+# Module-level HTTP client for connection pooling
+_shared_http_client = None
 
-        return httpx.Client(timeout=60.0, follow_redirects=True)
-    except ImportError as e:
-        raise click.ClickException(
-            "httpx is required for ArcGIS conversion. Install with: pip install httpx"
-        ) from e
+
+def _get_shared_http_client():
+    """
+    Get or create a shared HTTP client for connection pooling.
+
+    This reuses TCP connections across requests, saving ~100-200ms per request
+    on TLS handshakes. HTTP/2 is DISABLED due to compatibility issues with
+    ArcGIS servers (they disconnect after sustained use).
+
+    Returns:
+        httpx.Client: Shared client instance with connection pooling enabled
+    """
+    global _shared_http_client
+
+    if _shared_http_client is None:
+        try:
+            import httpx
+
+            _shared_http_client = httpx.Client(
+                timeout=60.0,
+                follow_redirects=True,
+                http2=False,  # Disabled - causes RemoteProtocolError with ArcGIS
+                limits=httpx.Limits(
+                    max_connections=20,  # Allow more connections for parallel workers
+                    max_keepalive_connections=20,
+                ),
+            )
+        except ImportError as e:
+            raise click.ClickException(
+                "httpx is required for ArcGIS conversion. Install with: pip install httpx"
+            ) from e
+
+    return _shared_http_client
+
+
+def _reset_http_client():
+    """
+    Reset the shared HTTP client (for testing or cleanup).
+
+    This closes the existing client and allows a new one to be created.
+    """
+    global _shared_http_client
+
+    if _shared_http_client is not None:
+        _shared_http_client.close()
+        _shared_http_client = None
+
+
+def _get_http_client():
+    """
+    Get HTTP client for making requests.
+
+    Deprecated: Use _get_shared_http_client() for connection pooling.
+    Kept for backward compatibility.
+    """
+    return _get_shared_http_client()
 
 
 def _make_request(
@@ -93,20 +142,36 @@ def _make_request(
     max_retries: int = 3,
     retry_delay: float = 1.0,
 ) -> dict:
-    """Make HTTP request with retry logic."""
+    """
+    Make HTTP request with retry logic.
+
+    Uses shared HTTP client for connection pooling and enables gzip compression
+    to reduce bandwidth usage by 60-80%.
+    """
     import httpx
 
     last_exception = None
 
+    # Headers for compression support (60-80% bandwidth reduction)
+    headers = {
+        "Accept-Encoding": "gzip, deflate",
+    }
+
     for attempt in range(max_retries):
         try:
-            with _get_http_client() as client:
-                if method == "GET":
-                    response = client.get(url, params=params)
-                else:
-                    response = client.post(url, data=data)
-                response.raise_for_status()
-                return response.json()
+            client = _get_shared_http_client()
+            if method == "GET":
+                response = client.get(url, params=params, headers=headers)
+            else:
+                response = client.post(url, data=data, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.RemoteProtocolError as e:
+            # Server disconnected - reset connection pool and retry
+            last_exception = e
+            if attempt < max_retries - 1:
+                _reset_http_client()  # Force fresh connection
+                time.sleep(retry_delay * (attempt + 1))
         except httpx.TimeoutException as e:
             last_exception = e
             if attempt < max_retries - 1:
