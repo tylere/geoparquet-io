@@ -95,21 +95,23 @@ class TestConnectionPooling:
         # After reset, should get a different instance
         assert client1 is not client2
 
-    def test_http_client_has_http2_enabled(self):
+    def test_http_client_has_http2_disabled(self):
         """
-        Test that HTTP/2 is enabled for better parallel request performance.
+        Test that HTTP/2 is DISABLED for ArcGIS compatibility.
 
-        HTTP/2 multiplexing allows multiple parallel requests over a single
-        TCP connection, which is 30-40% faster for concurrent requests.
+        HTTP/2 causes RemoteProtocolError with ArcGIS servers after sustained use.
+        Connection pooling and gzip compression still provide performance benefits.
         """
-        from geoparquet_io.core.arcgis import _get_shared_http_client
+        from geoparquet_io.core.arcgis import _get_shared_http_client, _reset_http_client
+
+        # Reset to ensure clean state
+        _reset_http_client()
 
         client = _get_shared_http_client()
 
-        # Verify HTTP/2 is enabled
+        # Verify client exists and has transport
         assert hasattr(client, "_transport")
-        # httpx uses http2=True in constructor
-        # We can't easily check this on the instance, so we'll verify in integration
+        # HTTP/2 should be disabled (http2=False in constructor)
 
 
 class TestGzipCompression:

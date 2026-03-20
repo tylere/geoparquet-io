@@ -82,7 +82,8 @@ def _get_shared_http_client():
     Get or create a shared HTTP client for connection pooling.
 
     This reuses TCP connections across requests, saving ~100-200ms per request
-    on TLS handshakes. HTTP/2 is enabled for better parallel request performance.
+    on TLS handshakes. HTTP/2 is DISABLED due to compatibility issues with
+    ArcGIS servers (they disconnect after sustained use).
 
     Returns:
         httpx.Client: Shared client instance with connection pooling enabled
@@ -96,10 +97,10 @@ def _get_shared_http_client():
             _shared_http_client = httpx.Client(
                 timeout=60.0,
                 follow_redirects=True,
-                http2=True,  # Enable HTTP/2 for better parallel requests
+                http2=False,  # Disabled - causes RemoteProtocolError with ArcGIS
                 limits=httpx.Limits(
-                    max_connections=10,
-                    max_keepalive_connections=10,
+                    max_connections=20,  # Allow more connections for parallel workers
+                    max_keepalive_connections=20,
                 ),
             )
         except ImportError as e:
@@ -165,6 +166,12 @@ def _make_request(
                 response = client.post(url, data=data, headers=headers)
             response.raise_for_status()
             return response.json()
+        except httpx.RemoteProtocolError as e:
+            # Server disconnected - reset connection pool and retry
+            last_exception = e
+            if attempt < max_retries - 1:
+                _reset_http_client()  # Force fresh connection
+                time.sleep(retry_delay * (attempt + 1))
         except httpx.TimeoutException as e:
             last_exception = e
             if attempt < max_retries - 1:
