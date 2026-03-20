@@ -39,14 +39,22 @@ gpio inspect myfile.parquet
 # Check file quality and best practices
 gpio check all myfile.parquet
 
-# Add bounding box column for faster queries
-gpio add bbox input.parquet output.parquet
+# Add spatial indexing columns
+gpio add bbox input.parquet output.parquet              # Bounding boxes
+gpio add h3 input.parquet output.parquet --resolution 8 # H3 hexagons
+gpio add quadkey input.parquet output.parquet           # Quadkeys
+gpio add s2 input.parquet output.parquet --level 13     # S2 cells
+gpio add kdtree input.parquet output.parquet            # KD-tree partitions
 
-# Sort using Hilbert curve for spatial locality
-gpio sort hilbert input.parquet output_sorted.parquet
+# Add administrative divisions via spatial join
+gpio add admin-divisions input.parquet output.parquet --dataset gaul --levels continent,country
 
-# Partition by admin boundaries
-gpio partition admin buildings.parquet output_dir/ --dataset gaul --levels continent,country
+# Sort using spatial curves for better compression and query performance
+gpio sort hilbert input.parquet output_sorted.parquet   # Hilbert curve
+gpio sort quadkey input.parquet output_sorted.parquet   # Quadkey sorting
+
+# Partition by admin boundaries (supports up to 3 hierarchical levels)
+gpio partition admin buildings.parquet output_dir/ --dataset gaul --levels continent,country,department
 
 # Remote-to-remote processing (S3, GCS, Azure, HTTPS)
 gpio add bbox s3://bucket/input.parquet s3://bucket/output.parquet --profile my-aws
@@ -84,7 +92,7 @@ gpio.read('data.parquet') \
     .upload('s3://bucket/filtered.parquet')
 ```
 
-The Python API keeps data in memory as Arrow tables, providing up to 5x better performance than CLI operations. See the [Python API documentation](https://geoparquet.io/api/python-api/) for full details.
+The Python API keeps data in memory as Arrow tables, providing significant performance improvements over file-based CLI operations. Benchmarks show 78% faster execution on a 75MB test file (400K rows) compared to the file-based CLI approach. See the [Python API documentation](https://geoparquet.io/api/python-api/) and [Performance Benchmarks](https://geoparquet.io/guide/benchmarks/) for details.
 
 ## Plugins
 
