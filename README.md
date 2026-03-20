@@ -39,14 +39,19 @@ gpio inspect myfile.parquet
 # Check file quality and best practices
 gpio check all myfile.parquet
 
-# Add bounding box column for faster queries
+# Add spatial indexing (bbox, h3, quadkey, s2, a5, kdtree)
 gpio add bbox input.parquet output.parquet
+gpio add h3 input.parquet output.parquet --resolution 8
 
-# Sort using Hilbert curve for spatial locality
-gpio sort hilbert input.parquet output_sorted.parquet
+# Enrich with administrative boundaries
+gpio add admin-divisions input.parquet output.parquet --dataset gaul --levels continent,country
 
-# Partition by admin boundaries
-gpio partition admin buildings.parquet output_dir/ --dataset gaul --levels continent,country
+# Sort using spatial curves for better compression and query performance
+gpio sort hilbert input.parquet output_sorted.parquet   # Hilbert curve
+gpio sort quadkey input.parquet output_sorted.parquet   # Quadkey sorting
+
+# Partition by admin boundaries (supports up to 3 hierarchical levels)
+gpio partition admin buildings.parquet output_dir/ --dataset gaul --levels continent,country,department
 
 # Remote-to-remote processing (S3, GCS, Azure, HTTPS)
 gpio add bbox s3://bucket/input.parquet s3://bucket/output.parquet --profile my-aws
@@ -57,7 +62,7 @@ gpio sort hilbert https://example.com/data.parquet s3://bucket/sorted.parquet
 gpio extract --bbox "-122.5,37.5,-122.0,38.0" input.parquet | gpio add bbox - | gpio sort hilbert - output.parquet
 ```
 
-For more examples and detailed usage, see the [Quick Start Tutorial](https://geoparquet.io/getting-started/quickstart/) and [User Guide](https://geoparquet.io/guide/inspect/).
+For complete command documentation including all spatial indexing options, see the [CLI Reference](https://geoparquet.io/cli/add/) and [User Guide](https://geoparquet.io/guide/inspect/).
 
 ## Python API
 
@@ -84,7 +89,7 @@ gpio.read('data.parquet') \
     .upload('s3://bucket/filtered.parquet')
 ```
 
-The Python API keeps data in memory as Arrow tables, providing up to 5x better performance than CLI operations. See the [Python API documentation](https://geoparquet.io/api/python-api/) for full details.
+The Python API keeps data in memory as Arrow tables, providing significant performance improvements over file-based CLI operations. Benchmarks show 78% faster execution on a 75MB test file (400K rows) compared to the file-based CLI approach. See the [Python API documentation](https://geoparquet.io/api/python-api/) and [Performance Benchmarks](https://geoparquet.io/guide/benchmarks/) for details.
 
 ## Plugins
 
