@@ -72,7 +72,7 @@ geoparquet_io/
     └── stac.py          # STAC metadata API
 ```
 
-<!-- freshness: last-verified: 2026-03-09, maps-to: geoparquet_io/cli/main.py -->
+<!-- freshness: last-verified: 2026-03-20, maps-to: geoparquet_io/cli/main.py -->
 <!-- BEGIN GENERATED: cli-commands -->
 ### CLI Command Groups
 
@@ -100,7 +100,7 @@ geoparquet_io/
 | `duckdb_metadata.py` | DuckDB-based Parquet metadata extraction. | 1277 |
 | `convert.py` |  | 1259 |
 | `extract.py` | Extract columns and rows from GeoParquet files. | 1225 |
-| `arcgis.py` | ArcGIS Feature Service to GeoParquet conversion. | 1161 |
+| `arcgis.py` | ArcGIS Feature Service to GeoParquet conversion. | 1219 |
 | `metadata_utils.py` | Utilities for extracting and formatting GeoParquet... | 1077 |
 | `extract_bigquery.py` |  | 934 |
 | `partition_common.py` |  | 908 |
@@ -112,7 +112,7 @@ geoparquet_io/
 | ... | *36 more modules* | |
 <!-- END GENERATED: core-modules -->
 
-<!-- freshness: last-verified: 2026-03-09, maps-to: geoparquet_io/core/common.py, geoparquet_io/cli/decorators.py -->
+<!-- freshness: last-verified: 2026-03-20, maps-to: geoparquet_io/core/common.py, geoparquet_io/cli/decorators.py -->
 ### Key Patterns
 
 1. **CLI/Core Separation**: CLI commands are thin wrappers; business logic in `core/`
@@ -128,7 +128,7 @@ geoparquet_io/
 
 ---
 
-<!-- freshness: last-verified: 2026-03-09, maps-to: geoparquet_io/core/common.py -->
+<!-- freshness: last-verified: 2026-03-20, maps-to: geoparquet_io/core/common.py -->
 ## Dependencies Quick Reference
 
 ```python
@@ -145,7 +145,7 @@ from geoparquet_io.core.common import is_remote_url, remote_write_context, setup
 
 ---
 
-<!-- freshness: last-verified: 2026-03-09, maps-to: pyproject.toml -->
+<!-- freshness: last-verified: 2026-03-20, maps-to: pyproject.toml -->
 ## Testing with uv
 
 ```bash
