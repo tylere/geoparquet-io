@@ -943,7 +943,7 @@ To find service URLs:
 
 ## Extracting from WFS Services
 
-Web Feature Service (WFS) is an OGC standard for serving vector geospatial data over HTTP. Many government agencies and organizations publish data via WFS.
+Web Feature Service (WFS) is an OGC standard for serving vector geospatial data over HTTP. Many government agencies and organizations publish data via WFS. gpio uses DuckDB's httpfs extension to stream JSON directly over HTTP, making extraction very fast.
 
 ### Basic Usage
 
@@ -957,6 +957,9 @@ Web Feature Service (WFS) is an OGC standard for serving vector geospatial data 
 
     # Extract with limit
     gpio extract wfs https://geo.example.com/wfs cities output.parquet --limit 1000
+
+    # Verbose mode shows progress
+    gpio extract wfs https://geo.example.com/wfs cities output.parquet --verbose
     ```
 
 === "Python"
@@ -972,11 +975,21 @@ Web Feature Service (WFS) is an OGC standard for serving vector geospatial data 
 
 ### Bbox Filtering
 
+Spatial filtering can be applied server-side (pushed to WFS) or locally (after download):
+
 === "CLI"
     ```bash
-    # Server-side bbox filter (recommended for large datasets)
+    # Server-side bbox filter (default for WFS)
+    gpio extract wfs https://geo.example.com/wfs cities output.parquet \
+        --bbox -122.5,37.5,-122.0,38.0
+
+    # Explicitly choose server-side
     gpio extract wfs https://geo.example.com/wfs cities output.parquet \
         --bbox -122.5,37.5,-122.0,38.0 --bbox-mode server
+
+    # Force local filtering (download all, then filter)
+    gpio extract wfs https://geo.example.com/wfs cities output.parquet \
+        --bbox -122.5,37.5,-122.0,38.0 --bbox-mode local
     ```
 
 === "Python"
@@ -990,17 +1003,73 @@ Web Feature Service (WFS) is an OGC standard for serving vector geospatial data 
     )
     ```
 
-### Parallel Fetching
+### Parallel Fetching for Large Datasets
 
-For faster extraction from large datasets:
+For datasets with 1 million+ features, use parallel pagination to avoid server timeouts:
+
+=== "CLI"
+    ```bash
+    # Parallel extraction with 4 workers
+    gpio extract wfs https://geo.example.com/wfs large_layer output.parquet \
+        --workers 4 \
+        --page-size 10000
+
+    # For most datasets under 100K features, single-stream is faster
+    gpio extract wfs https://geo.example.com/wfs cities output.parquet
+    ```
+
+=== "Python"
+    ```python
+    from geoparquet_io.api import Table
+
+    # Parallel extraction
+    table = Table.from_wfs(
+        'https://geo.example.com/wfs',
+        'large_layer',
+        max_workers=4,
+        page_size=10000
+    )
+    ```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--workers` | 1 | Number of parallel requests (1-10) |
+| `--page-size` | 10000 | Features per page when using `--workers > 1` |
+
+!!! tip "When to use parallel"
+    - **Single stream (default)**: Fastest for datasets under ~100K features
+    - **Parallel (`--workers 2-4`)**: For 1M+ feature datasets where timeouts occur
+
+### Output Optimization
+
+By default, WFS extracts include Hilbert spatial ordering and bbox columns:
 
 ```bash
-gpio extract wfs https://geo.example.com/wfs cities output.parquet --workers 3
+# Skip optimizations for faster extraction
+gpio extract wfs https://geo.example.com/wfs cities output.parquet \
+    --skip-hilbert \
+    --skip-bbox
+
+# Custom compression
+gpio extract wfs https://geo.example.com/wfs cities output.parquet \
+    --compression GZIP \
+    --compression-level 6
+```
+
+### CRS Handling
+
+gpio automatically negotiates the coordinate reference system with the WFS server:
+
+```bash
+# Request specific CRS from server
+gpio extract wfs https://geo.example.com/wfs cities output.parquet \
+    --output-crs EPSG:3857
 ```
 
 ### Common Public WFS Services
 
 - **USGS Protected Areas Database (PAD-US)**: `https://gis1.usgs.gov/arcgis/services/padus3_0/MapServer/WFSServer`
+- **Transport for Cairo**: `https://data.transportforcairo.com/geoserver/geonode/ows`
 - State GIS portals (varies by state)
 - Municipal open data portals
 
