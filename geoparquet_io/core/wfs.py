@@ -933,13 +933,7 @@ def fetch_all_features_duckdb(
         total_count = min(total_count, max_features)
 
     if total_count:
-        # Estimate time at ~4000 rows/sec (typical DuckDB-native speed)
-        est_seconds = total_count / 4000
-        if est_seconds > 60:
-            est_time = f"~{est_seconds / 60:.1f} min"
-        else:
-            est_time = f"~{est_seconds:.0f}s"
-        progress(f"Streaming {total_count:,} features via DuckDB ({est_time})...")
+        progress(f"Streaming {total_count:,} features via DuckDB...")
     else:
         progress("Streaming features via DuckDB...")
 
