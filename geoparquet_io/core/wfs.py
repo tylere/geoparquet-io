@@ -160,7 +160,7 @@ def _make_request(
     """
     import httpx
 
-    last_exception = None
+    last_exception: Exception | None = None
 
     headers = {
         "Accept-Encoding": "gzip, deflate",
@@ -173,7 +173,7 @@ def _make_request(
             client = _get_shared_http_client()
             response = client.get(url, params=params, headers=headers)
             response.raise_for_status()
-            return response.content
+            return bytes(response.content)
         except httpx.RemoteProtocolError as e:
             last_exception = e
             if attempt < max_retries - 1:
@@ -341,7 +341,7 @@ def _detect_geometry_column(wfs, typename: str) -> str:
     try:
         schema = wfs.get_schema(typename)
         if schema and "geometry" in schema:
-            return schema.get("geometry_column", "geometry")
+            return str(schema.get("geometry_column", "geometry"))
         # Check for common geometry column names in properties
         if schema and "properties" in schema:
             for prop_name, prop_type in schema["properties"].items():
@@ -349,7 +349,7 @@ def _detect_geometry_column(wfs, typename: str) -> str:
                     geom in str(prop_type).lower()
                     for geom in ["geometry", "point", "line", "polygon", "multi"]
                 ):
-                    return prop_name
+                    return str(prop_name)
     except Exception:
         pass  # Fall back to default
 
@@ -940,11 +940,12 @@ def _parse_geojson_features(content: bytes) -> list[dict]:
 
     if isinstance(data, dict):
         if data.get("type") == "FeatureCollection":
-            return data.get("features", [])
+            features = data.get("features", [])
+            return list(features) if features else []
         elif data.get("type") == "Feature":
-            return [data]
+            return [dict(data)]
         elif "features" in data:
-            return data["features"]
+            return list(data["features"])
 
     return []
 
@@ -1151,6 +1152,7 @@ def _stream_features_to_parquet(
                         f"Error: {e}"
                     ) from e
 
+            assert writer is not None  # Initialized above with target_schema
             writer.write_table(page_table)
             total_rows += page_table.num_rows
 
