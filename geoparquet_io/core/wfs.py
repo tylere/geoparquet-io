@@ -24,6 +24,7 @@ import time
 import uuid
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -33,8 +34,10 @@ import pyarrow.parquet as pq
 
 # Public API
 __all__ = [
+    "MAX_RECOMMENDED_WORKERS",
     "WFSError",
     "WFSLayerInfo",
+    "_sanitize_properties",
     "convert_wfs_to_geoparquet",
     "get_layer_info",
     "get_wfs_capabilities",
@@ -951,16 +954,22 @@ def fetch_all_features(
                 if not futures:
                     break
 
-                # Collect results in order
+                # Collect results in order with timeout (1.5x HTTP timeout for buffer)
                 results = []
                 has_content = False
+                future_timeout = DEFAULT_TIMEOUT * 1.5
 
                 for offset, future in futures:
                     try:
-                        content = future.result()
+                        content = future.result(timeout=future_timeout)
                         if _response_has_features(content):
                             results.append((offset, content))
                             has_content = True
+                    except FuturesTimeoutError as e:
+                        raise WFSError(
+                            f"Request timed out after {future_timeout}s fetching features at offset {offset}. "
+                            "The WFS server may be overloaded or rate-limiting requests."
+                        ) from e
                     except Exception as e:
                         raise WFSError(f"Failed to fetch features at offset {offset}: {e}") from e
 
@@ -1158,6 +1167,36 @@ def _parse_geojson_features(content: bytes) -> list[dict]:
     return []
 
 
+def _sanitize_properties(features: list[dict]) -> list[dict]:
+    """
+    Sanitize property keys in GeoJSON features for DuckDB ST_Read compatibility.
+
+    DuckDB's ST_Read adds its own 'ogc_fid' column, so if the data already has
+    an 'ogc_fid' property (any case variation), it causes a duplicate column
+    error. This renames such conflicting properties (e.g., ogc_fid -> ogc_fid_orig).
+
+    Args:
+        features: List of GeoJSON feature dicts
+
+    Returns:
+        Features with sanitized property keys
+    """
+    result = []
+    for feature in features:
+        props = feature.get("properties", {})
+        if props:
+            sanitized = {}
+            for key, value in props.items():
+                # Case-insensitive check for ogc_fid (DuckDB column names are case-insensitive)
+                if key.lower() == "ogc_fid":
+                    sanitized[f"{key}_orig"] = value
+                else:
+                    sanitized[key] = value
+            feature = {**feature, "properties": sanitized}
+        result.append(feature)
+    return result
+
+
 def _geojson_to_arrow_table(features: list[dict]) -> pa.Table | None:
     """
     Convert GeoJSON features to PyArrow Table with WKB geometry.
@@ -1172,6 +1211,9 @@ def _geojson_to_arrow_table(features: list[dict]) -> pa.Table | None:
     """
     if not features:
         return None
+
+    # Deduplicate property keys (some WFS servers return duplicates like ogc_fid)
+    features = _sanitize_properties(features)
 
     # Create temporary GeoJSON file for DuckDB
     geojson_collection = json.dumps(

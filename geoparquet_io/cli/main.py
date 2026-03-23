@@ -2728,10 +2728,10 @@ def extract_bigquery_cmd(
     help="Number of features per request page. Default: 1000",
 )
 @click.option(
-    "--max-workers",
-    type=click.IntRange(1, None),
+    "--workers",
+    type=click.IntRange(min=1, max=10),
     default=1,
-    help="Concurrent requests (1=sequential, 2-3 recommended for most servers). Default: 1",
+    help="Number of concurrent requests (1-10). Default: 1 (sequential). Values 2-3 recommended for speedup. Higher values may trigger rate limits.",
 )
 @click.option(
     "--skip-hilbert",
@@ -2760,7 +2760,7 @@ def extract_wfs_cmd(
     limit,
     output_crs,
     batch_size,
-    max_workers,
+    workers,
     skip_hilbert,
     skip_bbox,
     compression,
@@ -2801,7 +2801,7 @@ def extract_wfs_cmd(
         \b
         # Force specific CRS and use parallel extraction
         gpio extract wfs https://geo.example.com/wfs buildings output.parquet \\
-            --output-crs EPSG:4326 --max-workers 3
+            --output-crs EPSG:4326 --workers 3
 
         \b
         # Limit features and skip optimizations for faster extraction
@@ -2880,7 +2880,7 @@ def extract_wfs_cmd(
             output_crs=output_crs,
             limit=limit,
             page_size=batch_size,
-            max_workers=max_workers,
+            max_workers=workers,
             skip_hilbert=skip_hilbert,
             skip_bbox=skip_bbox,
             compression=compression.upper(),

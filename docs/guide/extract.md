@@ -995,7 +995,7 @@ Web Feature Service (WFS) is an OGC standard for serving vector geospatial data 
 For faster extraction from large datasets:
 
 ```bash
-gpio extract wfs https://geo.example.com/wfs cities output.parquet --max-workers 3
+gpio extract wfs https://geo.example.com/wfs cities output.parquet --workers 3
 ```
 
 ### Common Public WFS Services

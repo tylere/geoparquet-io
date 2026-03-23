@@ -11,6 +11,7 @@ import pytest
 
 # Module-level imports for WFS functions (avoids per-test imports)
 from geoparquet_io.core.wfs import (
+    MAX_RECOMMENDED_WORKERS,
     WFSError,
     WFSLayerInfo,
     _build_bbox_param,
@@ -23,6 +24,7 @@ from geoparquet_io.core.wfs import (
     _normalize_crs,
     _response_has_features,
     _sanitize_filename,
+    _sanitize_properties,
     _validate_identifier,
     fetch_all_features,
     get_layer_info,
@@ -1226,3 +1228,110 @@ class TestWFSIntegration:
             limit=5,
         )
         assert table.num_rows <= 5
+
+
+# =============================================================================
+# CLI Ergonomics Tests
+# =============================================================================
+
+
+class TestWFSCLIErgonomics:
+    """Test CLI option naming consistency with ArcGIS."""
+
+    def test_cli_uses_workers_option(self):
+        """WFS CLI should use --workers like ArcGIS, not --max-workers."""
+        from click.testing import CliRunner
+
+        from geoparquet_io.cli.main import cli
+
+        runner = CliRunner()
+        # Test that --workers is recognized
+        result = runner.invoke(cli, ["extract", "wfs", "--help"])
+        assert result.exit_code == 0
+        # Should have --workers option
+        assert "--workers" in result.output
+        # Should NOT have --max-workers option
+        assert "--max-workers" not in result.output
+
+    def test_workers_capped_at_10(self):
+        """Workers should be capped at 10 like ArcGIS."""
+        # MAX_RECOMMENDED_WORKERS should be 10
+        assert MAX_RECOMMENDED_WORKERS == 10
+
+
+class TestOgcFidSanitization:
+    """Test ogc_fid column collision handling."""
+
+    def test_sanitize_renames_ogc_fid_lowercase(self):
+        """ogc_fid property should be renamed to avoid DuckDB collision."""
+        features = [
+            {
+                "type": "Feature",
+                "id": "1",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"ogc_fid": 123, "name": "Test"},
+            }
+        ]
+
+        result = _sanitize_properties(features)
+
+        # ogc_fid should be renamed to ogc_fid_orig
+        assert "ogc_fid" not in result[0]["properties"]
+        assert "ogc_fid_orig" in result[0]["properties"]
+        assert result[0]["properties"]["ogc_fid_orig"] == 123
+        assert result[0]["properties"]["name"] == "Test"
+
+    def test_sanitize_renames_ogc_fid_uppercase(self):
+        """OGC_FID property should also be renamed."""
+        features = [
+            {
+                "type": "Feature",
+                "id": "1",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"OGC_FID": 456, "name": "Test"},
+            }
+        ]
+
+        result = _sanitize_properties(features)
+
+        assert "OGC_FID" not in result[0]["properties"]
+        assert "OGC_FID_orig" in result[0]["properties"]
+        assert result[0]["properties"]["OGC_FID_orig"] == 456
+
+    def test_sanitize_renames_ogc_fid_mixed_case(self):
+        """Mixed case variations like Ogc_Fid should also be renamed.
+
+        This is critical - some WFS servers return mixed-case column names,
+        and DuckDB column name comparison is case-insensitive for collisions.
+        """
+        features = [
+            {
+                "type": "Feature",
+                "id": "1",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"Ogc_Fid": 789, "name": "Test"},
+            }
+        ]
+
+        result = _sanitize_properties(features)
+
+        # Should be renamed regardless of case
+        assert "Ogc_Fid" not in result[0]["properties"]
+        assert "Ogc_Fid_orig" in result[0]["properties"]
+        assert result[0]["properties"]["Ogc_Fid_orig"] == 789
+
+    def test_sanitize_preserves_other_properties(self):
+        """Non-ogc_fid properties should be preserved unchanged."""
+        features = [
+            {
+                "type": "Feature",
+                "id": "1",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"name": "Test", "value": 42},
+            }
+        ]
+
+        result = _sanitize_properties(features)
+
+        assert result[0]["properties"]["name"] == "Test"
+        assert result[0]["properties"]["value"] == 42
