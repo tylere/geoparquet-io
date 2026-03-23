@@ -8,9 +8,15 @@ Examples: "Add `gpio publish stac` command for STAC generation" or "Fix H3 index
 ## Technical Details
 <!-- Implementation notes, breaking changes, migration steps. For reviewers. -->
 
+## Breaking Changes
+**Does this PR introduce breaking changes?** No / Yes
+
+<!-- If yes, describe what breaks and how users should migrate -->
+
 ## Related Issue(s)
 - #
 
 ## Checklist
-- [ ] Code is formatted
-- [ ] Tests pass
+- [ ] Tests added/updated
+- [ ] All tests pass (`uv run pytest`)
+- [ ] Documentation updated (README, guides, CLI reference)
