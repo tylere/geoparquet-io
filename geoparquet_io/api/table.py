@@ -509,6 +509,46 @@ class Table:
 
         return cls(arrow_table)
 
+    @classmethod
+    def from_wfs(
+        cls,
+        service_url: str,
+        typename: str,
+        version: str = "1.1.0",
+        bbox: tuple[float, float, float, float] | None = None,
+        limit: int | None = None,
+        max_workers: int = 1,
+    ) -> Table:
+        """
+        Create Table from WFS layer.
+
+        Args:
+            service_url: WFS service URL
+            typename: Feature type name (e.g., 'cities' or 'ns:cities')
+            version: WFS version (1.0.0 or 1.1.0)
+            bbox: Optional bounding box filter (xmin, ymin, xmax, ymax)
+            limit: Maximum features to fetch
+            max_workers: Concurrent requests (1=sequential, 2-3 recommended)
+
+        Returns:
+            Table for chaining operations
+
+        Example:
+            >>> import geoparquet_io as gpio
+            >>> gpio.Table.from_wfs('https://geo.example.com/wfs', 'cities').add_bbox().write('cities.parquet')
+        """
+        from geoparquet_io.core.wfs import wfs_to_table
+
+        table = wfs_to_table(
+            service_url,
+            typename,
+            version=version,
+            bbox=bbox,
+            limit=limit,
+            max_workers=max_workers,
+        )
+        return cls(table)
+
     def _format_crs_display(self, crs: dict | str | None) -> str:
         """Format CRS for human-readable display."""
         if crs is None:
