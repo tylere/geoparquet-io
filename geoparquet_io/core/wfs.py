@@ -198,29 +198,46 @@ def _make_request(
     if accept:
         headers["Accept"] = accept
 
+    # Build full URL for logging
+    request_desc = url
+    if params:
+        param_summary = ", ".join(f"{k}={v}" for k, v in list(params.items())[:5])
+        if len(params) > 5:
+            param_summary += f", ... ({len(params)} params)"
+        request_desc = f"{url}?{param_summary}"
+
     for attempt in range(max_retries):
         try:
+            debug(f"HTTP GET: {request_desc[:100]}{'...' if len(request_desc) > 100 else ''}")
+            start_time = time.time()
             client = _get_shared_http_client(timeout=timeout)
             response = client.get(url, params=params, headers=headers)
+            elapsed = time.time() - start_time
             response.raise_for_status()
-            return bytes(response.content)
+            content = bytes(response.content)
+            debug(f"HTTP OK: {len(content):,} bytes in {elapsed:.1f}s")
+            return content
         except httpx.RemoteProtocolError as e:
             last_exception = e
+            warn(f"HTTP protocol error (attempt {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 _reset_http_client()
                 time.sleep(retry_delay * (attempt + 1))
         except httpx.TimeoutException as e:
             last_exception = e
+            warn(f"HTTP timeout after {timeout}s (attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay * (attempt + 1))
         except httpx.NetworkError as e:
             last_exception = e
+            warn(f"HTTP network error (attempt {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay * (attempt + 1))
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if status == 429 or (500 <= status < 600):
                 last_exception = e
+                warn(f"HTTP {status} (attempt {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
                     retry_after = e.response.headers.get("Retry-After")
                     delay = (
