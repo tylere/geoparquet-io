@@ -37,6 +37,7 @@ __all__ = [
     "MAX_RECOMMENDED_WORKERS",
     "WFSError",
     "WFSLayerInfo",
+    "_fetch_wfs_page_duckdb",
     "_sanitize_properties",
     "convert_wfs_to_geoparquet",
     "get_layer_info",
@@ -815,6 +816,59 @@ def fetch_features_page(
             accept = "text/xml"
 
     return _make_request(clean_url, params=params, accept=accept)
+
+
+def _fetch_wfs_page_duckdb(url: str) -> pa.Table:
+    """
+    Fetch a WFS GeoJSON page directly using DuckDB's httpfs.
+
+    This is MUCH faster than Python HTTP because:
+    - DuckDB streams the HTTP response (no Python memory buffering)
+    - JSON parsing happens in C++ (faster than Python json)
+    - Geometry conversion happens in-database (no temp files)
+
+    Args:
+        url: Full WFS GetFeature URL with all parameters
+
+    Returns:
+        PyArrow Table with geometry column (WKB) and all properties
+    """
+    con = get_duckdb_connection(load_spatial=True, load_httpfs=True)
+
+    # Use DuckDB to fetch and parse the WFS GeoJSON in one query
+    # This streams the HTTP response and parses JSON directly
+    # Step 1: Unnest features and extract geometry + properties struct
+    # Step 2: Expand properties struct into individual columns
+    query = f"""
+        WITH features AS (
+            SELECT unnest(features) AS feature
+            FROM read_json_auto('{url}')
+        ),
+        extracted AS (
+            SELECT
+                ST_AsWKB(ST_GeomFromGeoJSON(feature.geometry)) AS geometry,
+                feature.properties AS props
+            FROM features
+        )
+        SELECT
+            geometry,
+            unnest(props)
+        FROM extracted
+    """
+
+    try:
+        debug(f"DuckDB fetch: {url[:80]}...")
+        start_time = time.time()
+        result = con.execute(query)
+        table = result.fetch_arrow_table()
+        elapsed = time.time() - start_time
+        debug(f"DuckDB OK: {table.num_rows:,} rows in {elapsed:.1f}s")
+        return table
+    except Exception as e:
+        error_msg = str(e)
+        if "HTTP" in error_msg or "Could not" in error_msg:
+            raise WFSError(f"Failed to fetch WFS data: {e}") from e
+        raise WFSError(f"Failed to parse WFS response: {e}") from e
 
 
 def fetch_all_features(

@@ -1335,3 +1335,51 @@ class TestOgcFidSanitization:
 
         assert result[0]["properties"]["name"] == "Test"
         assert result[0]["properties"]["value"] == 42
+
+
+# =============================================================================
+# DuckDB-Native WFS Fetch Tests
+# =============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.slow
+class TestDuckDBNativeWFS:
+    """Test DuckDB-native WFS fetching using httpfs and read_json_auto."""
+
+    # Use Transport for Cairo GeoServer (known to support GeoJSON)
+    WFS_URL = (
+        "https://data.transportforcairo.com/geoserver/geonode/ows?"
+        "service=WFS&version=1.1.0&request=GetFeature"
+        "&typeName=geonode:cairo_od_stats"
+        "&outputFormat=application/json"
+        "&maxFeatures=10"
+    )
+
+    def test_fetch_wfs_page_duckdb_returns_arrow_table(self):
+        """DuckDB-native fetch should return an Arrow table with geometry."""
+        from geoparquet_io.core.wfs import _fetch_wfs_page_duckdb
+
+        table = _fetch_wfs_page_duckdb(self.WFS_URL)
+
+        # Should return Arrow table
+        import pyarrow as pa
+
+        assert isinstance(table, pa.Table)
+        # Should have geometry column
+        assert "geometry" in table.column_names
+        # Should have some rows
+        assert table.num_rows > 0
+        assert table.num_rows <= 10
+
+    def test_fetch_wfs_page_duckdb_geometry_is_wkb(self):
+        """Geometry should be WKB binary format."""
+        from geoparquet_io.core.wfs import _fetch_wfs_page_duckdb
+
+        table = _fetch_wfs_page_duckdb(self.WFS_URL)
+
+        # Geometry should be binary (WKB)
+        import pyarrow as pa
+
+        geom_type = table.schema.field("geometry").type
+        assert pa.types.is_binary(geom_type) or pa.types.is_large_binary(geom_type)
