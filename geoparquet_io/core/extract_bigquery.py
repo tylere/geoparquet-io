@@ -489,6 +489,53 @@ def _detect_geometry_column_from_schema(
     return None
 
 
+def _get_column_type(
+    con: duckdb.DuckDBPyConnection,
+    table_id: str,
+    column_name: str,
+) -> str:
+    """
+    Get the DuckDB type of a column in a BigQuery table.
+
+    Args:
+        con: DuckDB connection
+        table_id: BigQuery table ID
+        column_name: Column name to check
+
+    Returns:
+        Uppercase type string (e.g. "GEOMETRY", "VARCHAR")
+    """
+    schema_query = f"DESCRIBE SELECT * FROM bigquery_scan('{table_id}') LIMIT 0"
+    schema_result = con.execute(schema_query).fetchall()
+    for row in schema_result:
+        if row[0].lower() == column_name.lower():
+            return str(row[1]).upper()
+    return "VARCHAR"
+
+
+def _build_geometry_select_expr(column_name: str, column_type: str) -> str:
+    """
+    Build the SELECT expression for a geometry column based on its DuckDB type.
+
+    BigQuery GEOGRAPHY columns come through DuckDB's bigquery_scan as VARCHAR
+    (WKT strings), not as GEOMETRY type. This function handles both cases:
+    - GEOMETRY type: ST_AsWKB("col")
+    - VARCHAR type: ST_AsWKB(ST_GeomFromText("col"))
+
+    Args:
+        column_name: Name of the geometry column
+        column_type: DuckDB type of the column (e.g. "GEOMETRY", "VARCHAR")
+
+    Returns:
+        SQL expression string for the SELECT clause
+    """
+    if "GEOMETRY" in column_type:
+        return f'ST_AsWKB("{column_name}") AS "{column_name}"'
+    else:
+        # VARCHAR/STRING: BigQuery GEOGRAPHY serialized as WKT
+        return f'ST_AsWKB(ST_GeomFromText("{column_name}")) AS "{column_name}"'
+
+
 def _build_select_with_wkb(
     columns: list[str] | None,
     geometry_column: str | None,
@@ -500,6 +547,9 @@ def _build_select_with_wkb(
 
     DuckDB's GEOMETRY type uses an internal binary format when exported to Arrow,
     not standard WKB. We must use ST_AsWKB() to convert to proper WKB for GeoParquet.
+
+    Handles both native GEOMETRY columns and VARCHAR columns containing WKT
+    (common with BigQuery GEOGRAPHY type).
 
     Args:
         columns: List of columns to select (None = all)
@@ -516,12 +566,16 @@ def _build_select_with_wkb(
         schema_result = con.execute(schema_query).fetchall()
         columns = [row[0] for row in schema_result]
 
-    # Build SELECT with ST_AsWKB for geometry column
+    # Detect geometry column type if we have one
+    geom_col_type = ""
+    if geometry_column:
+        geom_col_type = _get_column_type(con, table_id, geometry_column)
+
+    # Build SELECT with appropriate geometry conversion
     select_parts = []
     for col in columns:
         if geometry_column and col.lower() == geometry_column.lower():
-            # Use ST_AsWKB to convert DuckDB GEOMETRY to proper WKB
-            select_parts.append(f'ST_AsWKB("{col}") AS "{col}"')
+            select_parts.append(_build_geometry_select_expr(col, geom_col_type))
         else:
             select_parts.append(f'"{col}"')
 

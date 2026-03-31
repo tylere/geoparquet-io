@@ -188,6 +188,50 @@ class TestExtractBigQueryTable:
         assert "name" in result.column_names
 
 
+class TestBuildGeometrySelectExpr:
+    """Test _build_geometry_select_expr handles different column types."""
+
+    def test_varchar_type_uses_geomfromtext(self):
+        """Test that VARCHAR columns get ST_GeomFromText wrapping."""
+        from geoparquet_io.core.extract_bigquery import _build_geometry_select_expr
+
+        expr = _build_geometry_select_expr("geometry", "VARCHAR")
+        assert "ST_GeomFromText" in expr
+        assert "ST_AsWKB" in expr
+        assert '"geometry"' in expr
+
+    def test_geometry_type_uses_direct_aswkb(self):
+        """Test that GEOMETRY-typed columns use ST_AsWKB directly."""
+        from geoparquet_io.core.extract_bigquery import _build_geometry_select_expr
+
+        expr = _build_geometry_select_expr("geometry", "GEOMETRY")
+        assert "ST_AsWKB" in expr
+        assert "ST_GeomFromText" not in expr
+
+    def test_string_type_uses_geomfromtext(self):
+        """Test that STRING type (another non-GEOMETRY type) uses ST_GeomFromText."""
+        from geoparquet_io.core.extract_bigquery import _build_geometry_select_expr
+
+        expr = _build_geometry_select_expr("geom", "STRING")
+        assert "ST_GeomFromText" in expr
+        assert "ST_AsWKB" in expr
+
+    def test_varchar_geometry_query_executes(self):
+        """Test that the generated SQL for VARCHAR geometry actually works."""
+        from geoparquet_io.core.extract_bigquery import _build_geometry_select_expr
+
+        con = duckdb.connect()
+        con.execute("INSTALL spatial; LOAD spatial")
+        con.execute("CREATE TABLE test_exec AS SELECT 1 AS id, 'POINT(1.5 2.5)' AS geometry")
+
+        expr = _build_geometry_select_expr("geometry", "VARCHAR")
+        result = con.execute(f"SELECT {expr} FROM test_exec").fetchall()
+        assert len(result) == 1
+        # geometry column should be BLOB (WKB bytes)
+        assert isinstance(result[0][0], bytes)
+        con.close()
+
+
 class TestDryRun:
     """Test dry-run functionality."""
 
