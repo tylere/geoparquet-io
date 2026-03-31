@@ -2099,6 +2099,51 @@ def inspect_meta(
         raise _friendly_parquet_error(e, parquet_file) from e
 
 
+@inspect.command(name="layers", cls=GlobAwareCommand)
+@click.argument("input_file")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON for scripting")
+@verbose_option
+def inspect_layers(input_file, json_output, verbose):
+    """List layers in multi-layer formats (GeoPackage, FileGDB).
+
+    Returns layer names for files with 2+ layers. Single-layer files
+    (GeoJSON, Shapefile, Parquet) or multi-layer files with only 1 layer
+    return nothing.
+
+    \b
+    Examples:
+        gpio inspect layers multi.gpkg          # List layers in GeoPackage
+        gpio inspect layers data.gdb            # List layers in FileGDB
+        gpio inspect layers multi.gpkg --json   # JSON output for scripting
+    """
+    import json
+
+    from geoparquet_io.core.layers import list_layers
+
+    try:
+        layers = list_layers(input_file)
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e)) from e
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+
+    if layers is None:
+        if json_output:
+            click.echo(json.dumps({"layers": None, "count": 0}))
+        else:
+            click.echo("No layers found (single-layer format or file with 0-1 layers)")
+        return
+
+    if json_output:
+        click.echo(json.dumps({"layers": layers, "count": len(layers)}))
+    else:
+        click.echo(f"Found {len(layers)} layers:")
+        for layer in layers:
+            click.echo(f"  - {layer}")
+
+
 # Extract commands group
 @cli.group(cls=ExtractDefaultGroup)
 @click.pass_context
